@@ -1,136 +1,65 @@
 import sys
-import re
-import sys
-from enum import Enum, auto
+import xml.etree.ElementTree as ET
 
-class TokenType(Enum):
-    VAR = 0
-    KEYWORD = 1
-    FRAME = 2
-    INT = 3
-    HEADER = 4
-    NIL = 5
-    NEWLINE = 6
-    LABEL = 7
-    BOOL = 8
-    STRING = 9
-    TYPE = 10
-    EOF = 11
-
-class KeywordType(Enum):
-    MOVE = auto()
-    CREATEFRAME = auto()
-    PUSHFRAME = auto()
-    POPFRAME = auto()
-    DEFVAR = auto()
-    CALL = auto()
-    RETURN = auto()
-    PUSHS = auto()
-    POPS = auto()
-    ADD = auto()
-    SUB = auto()
-    MUL = auto()
-    IDIV = auto()
-    LT = auto()
-    GT = auto()
-    EQ = auto()
-    AND = auto()
-    OR = auto()
-    NOT = auto()
-    INT2CHAR = auto()
-    STRI2INT = auto()
-    READ = auto()
-    WRITE = auto()
-    STRLEN = auto()
-    CONCAT = auto()
-    GETCHAR = auto()
-    SETCHAR = auto()
-    TYPE = auto()
-    LABEL = auto()
-    JUMP = auto()
-    JUMPIFEQ = auto()
-    JUMPIFNEQ = auto()
-    EXIT = auto()
-    DPRINT = auto()
-    BREAK = auto()
+def print_help():
+    print("""parse.py (IPP project 2023 - part 1)
+    Script of type filter reads the source code in IPPcode23 from the standard input,
+    checks the lexical and syntactic correctness of the code and prints the XML representation
+    of the program on the standard output.
+Usage:
+    python3 parse.py [-k-help]
+Options:
+    --help - prints this help message
+Error codes:
+    21 - wrong or missing header in the source code written in IPPcode23,
+    22 - unknown or wrong opcode in the source code written in IPPcode23,
+    23 - other lexical or syntactic error in the source code written in IPPcode23.
+    """)
+    print()
 
 
-class Token:
-    def __init__(self, type, value=None):
-        self.tokenType = type
-        self.value = value
+# Check for the --help argument
+if len(sys.argv) > 1:
+    if sys.argv[1] == "--help":
+        print_help()
+        sys.exit(0)
+    else:
+        sys.stderr.write("Error: Invalid argument!\n")
+        sys.exit(10)
+# Čtení vstupu ze stdin
+input_content = sys.stdin.read()
 
-    def getType(self):
-        return self.tokenType
+if not input_content.strip():
+    sys.stderr.write("Error: Empty input!\n")
+    sys.exit(11)
 
-    def getValue(self):
-        return self.value
+# Rozdělení vstupu na řádky
+lines = input_content.split('\n')
 
-
-
-
-class Parser:
-    def __init__(self, file):
-        self.file = file
-        self.keyword_regex = re.compile(r'\b(MOVE|CREATEFRAME|PUSHFRAME|POPFRAME|DEFVAR|' \
-                                        r'CALL|RETURN|PUSHS|POPS|ADD|SUB|MUL|IDIV|LT|GT|' \
-                                        r'EQ|AND|OR|NOT|CONCAT|GETCHAR|SETCHAR|INT2CHAR|' \
-                                        r'STRI2INT|READ|WRITE|STRLEN|TYPE|LABEL|JUMP|' \
-                                        r'JUMPIFEQ|JUMPIFNEQ|EXIT|DPRINT|BREAK)\b')
-
-        self.token_specs = [
-            ("HEADER",      r'\.IPPcode24'),          # Hlavička kódu
-            #("KEYWORD",     r'\b(MOVE|CREATEFRAME|PUSHFRAME|POPFRAME|DEFVAR|' \
-            #                r'CALL|RETURN|PUSHS|POPS|ADD|SUB|MUL|IDIV|LT|GT|' \
-            #                r'EQ|AND|OR|NOT|CONCAT|GETCHAR|SETCHAR|INT2CHAR|' \
-            #                r'STRI2INT|READ|WRITE|STRLEN|TYPE|LABEL|JUMP|' \
-            #                r'JUMPIFEQ|JUMPIFNEQ|EXIT|DPRINT|BREAK)\b'),
-            ("VAR",         r'\b(LF|TF|GF)@([A-Za-z_\-&%*!?][A-Za-z0-9_\-&%*!?]*)\b'),
-            ("INT",         r'\b(int)@(-?(?:0x[0-9A-Fa-f]+|0o[0-7]+|0[0-7]*|[1-9][0-9]*|0))\b'),
-            ("BOOL",        r'\b(bool)@(true|false)\b'),
-            ("STRING",      r'\b(string)@(?:[^\s#\\]|\\[0-9]{3})*'),
-            ("NIL",      r'\b(nil)@(nil)*\b'),
-            ("TYPE",        r'\b(int|string|bool)\b'),
-            ("LABEL",       r'\b([A-Za-z_\-&%*!?][A-Za-z0-9_\-&%*!?]*)\b'),
-            #("CONSTANT",    r'\b(int|bool|string|nil)@[A-Za-z0-9_\-]*'),
-            ("WHITESPACE",  r'[ \t\v\f\r]+'),  # Bílé znaky, ignorovány, kromě nového řádku
-            ("NEWLINE",     r'\n'),            # Nový řádek
-            ("COMMENT",     r'#.*'),                  # Komentáře
-            ("UNKNOWN",     r'.+'),  # Neznámé tokeny
-        ]
-
-    def compare_words(self):
-        tokens = re.findall(r'\b\w+\b', self.file)
-        keywords = self.keyword_regex.findall(self.file)
-        print("Tokens:")
-        print(tokens)
-        print("Keywords:")
-        print(keywords)
-    def parse_tokens(self):
-        tokens = []
-        if not re.match(self.token_specs[0][1], self.file):
-            sys.exit(21)
-        # Iterate over each token specification
-        for token_name, token_pattern in self.token_specs:
-            # Find all matches for the pattern
-            matches = re.findall(token_pattern, self.file)
-            # Create token objects and add to the list
-            for match in matches:
-                # Depending on the token name, you might want to handle differently
-                # For now, we will just append the token name and the match
-                tokens.append((token_name, match))
-        return tokens
+# Kontrola prvního řádku
+first_line = lines[0].strip()
+if not first_line.startswith(".IPPcode24"):
+    print("Chyba: Chybějící nebo neplatná hlavička '.IPPcode24' na prvním řádku.")
+    sys.exit(1)
 
 
-# Главная функция программы
-def main():
+for line in lines[1:]:
+    # Odstranění bílých znaků ze začátku a konce řádku
+    line = line.strip()
+    tokens = line.strip().split()
+    num_of_tokens = len(tokens)
+    instruction = tokens[0].upper()
 
-    parser = Parser(sys.stdin.read())
-    parser.compare_words()
-   # parsed_tokens = parser.parse_tokens()
-    # Print the parsed tokens
-    #for token in parsed_tokens:
-        ##print(token)
+    if instruction in ["CREATEFRAME", "PUSHFRAME", "POPFRAME", "RETURN", "BREAK"]:
+        # Check number of tokens
+        if num_of_tokens != 1:
+            sys.stderr.write(f"Error: Invalid number of tokens for {instruction}!\n")
+            sys.exit(22)
+    elif instruction in ["DEFVAR", "POPS"]:
+        if num_of_tokens != 2:
+            sys.stderr.write(f"Error: Invalid number of tokens for {instruction}!\n")
+            sys.exit(22)
 
-
-main()
+    else:
+        sys.stderr.write(f"Error: Invalid instruction {instruction}!\n")
+        sys.exit(22)
