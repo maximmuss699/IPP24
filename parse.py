@@ -1,19 +1,28 @@
 import sys
 import xml.etree.ElementTree as ET
+import re
+
+class Parser:
+    # Global variables for storing regexes used in the script
+    var_regex = r'\b(LF|TF|GF)@([A-Za-z_\-&%*!?][A-Za-z0-9_\-&%*!?]*)\b'
+    label_regex = r'^([a-zA-Z]|_|-|\$|&|%|\*|!|\?)([a-zA-Z0-9]|_|-|\$|&|%|\*|!|\?)*$'
+
+    @staticmethod
+    def check_tokens(number, expected):
+        if number != expected:
+            print(f"Error: Wrong number of arguments! Expected {expected}, got {number}.", file=sys.stderr)
+            sys.exit(23)
+
+    @staticmethod
+    def check_var(token):
+        if not re.match(Parser.var_regex, token):
+            print(f"Error: Invalid REGEX {token}!", file=sys.stderr)
+            sys.exit(23)
+
 
 def print_help():
-    print("""parse.py (IPP project 2023 - part 1)
-    Script of type filter reads the source code in IPPcode23 from the standard input,
-    checks the lexical and syntactic correctness of the code and prints the XML representation
-    of the program on the standard output.
-Usage:
-    python3 parse.py [-k-help]
-Options:
-    --help - prints this help message
-Error codes:
-    21 - wrong or missing header in the source code written in IPPcode23,
-    22 - unknown or wrong opcode in the source code written in IPPcode23,
-    23 - other lexical or syntactic error in the source code written in IPPcode23.
+    print("""parse.py (IPP project 2024 - part 1)
+    
     """)
     print()
 
@@ -40,25 +49,41 @@ lines = input_content.split('\n')
 first_line = lines[0].strip()
 if not first_line.startswith(".IPPcode24"):
     print("Chyba: Chybějící nebo neplatná hlavička '.IPPcode24' na prvním řádku.")
-    sys.exit(1)
+    sys.exit(21)
 
 
 for line in lines[1:]:
-    # Odstranění bílých znaků ze začátku a konce řádku
+
+    # Ignore lines, which begin with comment
+    if line.startswith('#'):
+        continue
+    # Remove multiple spaces
+    line = re.sub(r'\s+', ' ', line)
+    # Remove comments
+    line = re.sub(r"#.*", '', line)
     line = line.strip()
     tokens = line.strip().split()
     num_of_tokens = len(tokens)
     instruction = tokens[0].upper()
+    print(tokens)
 
     if instruction in ["CREATEFRAME", "PUSHFRAME", "POPFRAME", "RETURN", "BREAK"]:
         # Check number of tokens
-        if num_of_tokens != 1:
-            sys.stderr.write(f"Error: Invalid number of tokens for {instruction}!\n")
-            sys.exit(22)
+        Parser.check_tokens(num_of_tokens, 1)
     elif instruction in ["DEFVAR", "POPS"]:
-        if num_of_tokens != 2:
-            sys.stderr.write(f"Error: Invalid number of tokens for {instruction}!\n")
-            sys.exit(22)
+        Parser.check_tokens(num_of_tokens, 2)
+        Parser.check_var(tokens[1])
+    elif instruction in ["CALL", "LABEL", "JUMP"]:
+        Parser.check_tokens(num_of_tokens, 2)
+    elif instruction in ["PUSHS", "WRITE", "EXIT", "DPRINT"]:
+        Parser.check_tokens(num_of_tokens, 2)
+    elif instruction in ["MOVE", "INT2CHAR", "STRLEN", "TYPE"]:
+        Parser.check_tokens(num_of_tokens, 3)
+    elif instruction in ["READ"]:
+        Parser.check_tokens(num_of_tokens, 3)
+    elif instruction in ["ADD", "SUB", "MUL", "IDIV", "LT", "GT", "EQ", "AND", "OR",
+                         "NOT", "STRI2INT", "CONCAT", "GETCHAR", "SETCHAR", "JUMPIFEQ", "JUMPIFNEQ"]:
+        Parser.check_tokens(num_of_tokens, 4)
 
     else:
         sys.stderr.write(f"Error: Invalid instruction {instruction}!\n")
