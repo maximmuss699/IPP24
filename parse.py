@@ -1,5 +1,6 @@
 import sys
 import xml.etree.ElementTree as ET
+from xml.dom import minidom
 import re
 
 class Parser:
@@ -31,9 +32,7 @@ class Parser:
         #print(part[0])
         #print(part[1])
 
-        # First, check if the symbol is not a variable
-        # If it is, return as it is syntactically correct
-        # If it is not, run more checks for syntax correctness
+
         if not re.match(Parser.var_regex, token):
             # Check for integers
             if symbol_type == "int":
@@ -51,14 +50,13 @@ class Parser:
 
             # Check for strings
             elif symbol_type == "string":
-                # Escape sequences are allowed, but they must be in the correct format
+
                 if "\\" in value_type:
-                    # Count the number of backslashes
+
                     num_of_backslashes = value_type.count("\\")
-                    # Count the number of escape sequences as per the regex
+
                     regex_matches = re.findall(r"\\[0-9]{3}", value_type)
-                    # If the number of backslashes is not equal to the number of escape sequences, there is an invalid escape sequence
-                    # In this case, exit with error code 23
+
                     if num_of_backslashes != len(regex_matches):
                         sys.stderr.write(f"Error: Invalid symbol {token}!\n")
                         sys.exit(23)
@@ -87,20 +85,59 @@ class Parser:
             sys.exit(23)
 
 
+#############################
 
-def generate_xml(tokens):
-    root = ET.Element("instructions")
+class XMLWriter:
+    def __init__(self):
+        self.root = ET.Element("program", language="IPPcode24")
+        self.tree = ET.ElementTree(self.root)
 
-    for token in tokens:
-        instruction = token[0]
-        args = token[1:]
+    def prettify(elem):
+        """Return a pretty-printed XML string for the Element."""
+        rough_string = ET.tostring(elem,'utf-8')
+        reparsed = minidom.parseString(rough_string)
+        return reparsed.toprettyxml(indent="  ")
 
-        elem = ET.SubElement(root, instruction)
-        for arg in args:
-            ET.SubElement(elem, "arg").text = arg
+    def add_instruction(self, instruction, args):
+        instr_elem = ET.SubElement(self.root, "instruction", opcode=instruction)
+        arg_elem = ET.SubElement(instr_elem, f"arg{1}", type="var")
+        arg_elem.text = args
+    def write_argument(self, number, token, instruction):
+        instr_elem = ET.SubElement(self.root, "instruction", opcode=instruction)
+        if "@" in token:
+            part = token.split('@')
+            token_type = part[0]
+            if token_type in ["GF", "TF", "LF"]:
+                token_type = "var"
+                #arg_elem = ET.SubElement(instr_elem, f"arg{number}", type=token_type)
+                #arg_elem.text = token
+            elif token_type in ["int", "bool", "string", "nil"]:
+                token = part[1]
 
-    tree = ET.ElementTree(root)
-    tree.write(sys.stdout, encoding="unicode", xml_declaration=True)
+        else:
+            if token in ["int", "bool", "string", "nil"]:
+                token_type = "type"
+                token = token
+        # <label>
+            else:
+                token_type = "label"
+                token = token
+
+        arg_elem = ET.SubElement(instr_elem, f"arg{number}", type=token_type)
+        arg_elem.text = token
+
+
+
+
+    def finish_xml(self):
+        print('<?xml version="1.0" encoding="UTF-8"?>')
+        print(XMLWriter.prettify(self.root))
+
+
+
+
+
+
 
 
 def print_help():
@@ -135,9 +172,19 @@ if not first_line.startswith(".IPPcode24"):
     sys.exit(21)
 
 
+xml_writer = XMLWriter()
+
+
+#root = ET.Element("program", language="IPPcode24")
+#xml_str = ET.tostring(root, encoding="unicode", method="xml")
+#print('<?xml version="1.0" encoding="UTF-8"?>')
+#print(xml_str)
+
+
 for line in lines[1:]:
 
-    # Ignore lines, which begin with comment
+    if not line.strip():
+        continue
     if line.startswith('#'):
         continue
     # Remove multiple spaces
@@ -150,13 +197,14 @@ for line in lines[1:]:
     instruction = tokens[0].upper()
     print(tokens)
 
+
     if instruction in ["CREATEFRAME", "PUSHFRAME", "POPFRAME", "RETURN", "BREAK"]:
-        # Check number of tokens
         Parser.check_tokens(num_of_tokens, 1)
 
     elif instruction in ["DEFVAR", "POPS"]:
         Parser.check_tokens(num_of_tokens, 2)
         Parser.check_var(tokens[1])
+        xml_writer.write_argument(1, tokens[1], instruction)
 
     elif instruction in ["CALL", "LABEL", "JUMP"]:
         Parser.check_tokens(num_of_tokens, 2)
@@ -164,9 +212,12 @@ for line in lines[1:]:
 
     elif instruction in ["PUSHS", "WRITE", "EXIT", "DPRINT"]:
         Parser.check_tokens(num_of_tokens, 2)
+        #xml_writer.add_instruction(tokens[0], ["var@GF@counter", "const@int@10"])
+        #xml_writer.add_instruction(tokens[0], ["var@GF@result", "const@int@5", "const@int@3"])
         Parser.check_symbol(tokens[1])
+        xml_writer.write_argument(1, tokens[1], instruction)
 
-    elif instruction in ["MOVE", "INT2CHAR", "STRLEN", "TYPE"]:
+    elif instruction in ["MOVE", "INT2CHAR", "STRLEN", "TYPE", "NOT"]:
         Parser.check_tokens(num_of_tokens, 3)
         Parser.check_var(tokens[1])
         #print(tokens[1])
@@ -180,7 +231,7 @@ for line in lines[1:]:
 
 
     elif instruction in ["ADD", "SUB", "MUL", "IDIV", "LT", "GT", "EQ", "AND", "OR",
-                         "NOT", "STRI2INT", "CONCAT", "GETCHAR", "SETCHAR"]:
+                         "STRI2INT", "CONCAT", "GETCHAR", "SETCHAR"]:
         Parser.check_tokens(num_of_tokens, 4)
         Parser.check_var(tokens[1])
         Parser.check_symbol(tokens[2])
@@ -193,6 +244,9 @@ for line in lines[1:]:
         Parser.check_symbol(tokens[3])
 
 
+
     else:
         sys.stderr.write(f"Error: Invalid instruction {instruction}!\n")
         sys.exit(22)
+
+xml_writer.finish_xml()
