@@ -93,13 +93,10 @@ class XMLWriter:
         self.tree = ET.ElementTree(self.root)
 
     def prettify(elem):
-
         rough_string = ET.tostring(elem,'utf-8')
         reparsed = minidom.parseString(rough_string)
         return '\n'.join([line for line in reparsed.toprettyxml(indent="  ").split('\n')[1:]])
 
-    def add_instruction(self, instruction, order):
-        instr_elem = ET.SubElement(self.root, "instruction",order=str(order) , opcode=instruction)
 
     def write_argument(self, number, token, instruction, order):
         instr_elem = ET.SubElement(self.root, "instruction", order=str(order), opcode=instruction)
@@ -123,6 +120,36 @@ class XMLWriter:
                 token_type = "error"
                 token = token
         arg_elem = ET.SubElement(instr_elem, f"arg{number}", type=token_type)
+        arg_elem.text = token
+
+############################################################################################################
+
+    def start_instruction(self, instruction, order):
+        self.current_instruction = ET.SubElement(self.root, "instruction", order=str(order), opcode=instruction)
+
+    def finish_instruction(self):
+        self.current_instruction = None
+
+
+    def write_argument2(self, number, token, instruction):
+        if "@" in token:
+            part = token.split('@')
+            token_type = part[0]
+            if token_type in ["GF", "TF", "LF"]:
+                token_type = "var"
+            elif token_type in ["int", "bool", "string", "nil"]:
+                token = part[1]
+
+        else:
+
+            if instruction in ["LABEL", "JUMP", "CALL"]:
+                token_type = "label"
+                token = token
+        # <label>
+            else:
+                token_type = "error"
+                token = token
+        arg_elem = ET.SubElement(self.current_instruction, f"arg{number}", type=token_type)
         arg_elem.text = token
 
 
@@ -183,6 +210,7 @@ for line in lines[1:]:
     line = re.sub(r'\s+', ' ', line)
     # Remove comments
     line = re.sub(r"#.*", '', line)
+
     line = line.strip()
     tokens = line.strip().split()
     num_of_tokens = len(tokens)
@@ -193,7 +221,8 @@ for line in lines[1:]:
 
     if instruction in ["CREATEFRAME", "PUSHFRAME", "POPFRAME", "RETURN", "BREAK"]:
         Parser.check_tokens(num_of_tokens, 1)
-        xml_writer.add_instruction(instruction, instruction_order)
+        xml_writer.start_instruction(instruction, instruction_order)
+        xml_writer.finish_instruction()
 
     elif instruction in ["DEFVAR", "POPS"]:
         Parser.check_tokens(num_of_tokens, 2)
@@ -213,18 +242,20 @@ for line in lines[1:]:
     elif instruction in ["MOVE", "INT2CHAR", "STRLEN", "TYPE", "NOT"]:
         Parser.check_tokens(num_of_tokens, 3)
         Parser.check_var(tokens[1])
-        #print(tokens[1])
         Parser.check_symbol(tokens[2])
-        #print(tokens[2])
-        xml_writer.write_argument(1, tokens[1], instruction)
-        xml_writer.write_argument(2, tokens[2], instruction)
+        xml_writer.start_instruction(instruction, instruction_order)
+        xml_writer.write_argument2(1, tokens[1], instruction)
+        xml_writer.write_argument2(2, tokens[2], instruction)
+        xml_writer.finish_instruction()
 
     elif instruction in ["READ"]:
         Parser.check_tokens(num_of_tokens, 3)
         Parser.check_var(tokens[1])
         Parser.check_type(tokens[2])
-        xml_writer.write_argument(1, tokens[1], instruction)
-        xml_writer.write_argument(2, tokens[2], instruction)
+        xml_writer.start_instruction(instruction, instruction_order)
+        xml_writer.write_argument2(1, tokens[1], instruction)
+        xml_writer.write_argument2(2, tokens[2], instruction)
+        xml_writer.finish_instruction()
 
 
     elif instruction in ["ADD", "SUB", "MUL", "IDIV", "LT", "GT", "EQ", "AND", "OR",
@@ -233,18 +264,24 @@ for line in lines[1:]:
         Parser.check_var(tokens[1])
         Parser.check_symbol(tokens[2])
         Parser.check_symbol(tokens[3])
-        xml_writer.write_argument(1, tokens[1], instruction)
-        xml_writer.write_argument(2, tokens[2], instruction)
-        xml_writer.write_argument(3, tokens[3], instruction)
+        xml_writer.start_instruction(instruction, instruction_order)
+        xml_writer.write_argument2(1, tokens[1], instruction)
+        xml_writer.write_argument2(2, tokens[2], instruction)
+        xml_writer.write_argument2(3, tokens[3], instruction)
+        xml_writer.finish_instruction()
+
 
     elif instruction in ["JUMPIFEQ", "JUMPIFNEQ"]:
         Parser.check_tokens(num_of_tokens, 4)
         Parser.check_label(tokens[1])
         Parser.check_symbol(tokens[2])
         Parser.check_symbol(tokens[3])
-        xml_writer.write_argument(1, tokens[1], instruction)
-        xml_writer.write_argument(2, tokens[2], instruction)
-        xml_writer.write_argument(3, tokens[3], instruction)
+        xml_writer.start_instruction(instruction, instruction_order)
+        xml_writer.write_argument2(1, tokens[1], instruction)
+        xml_writer.write_argument2(2, tokens[2], instruction)
+        xml_writer.write_argument2(3, tokens[3], instruction)
+        xml_writer.finish_instruction()
+
 
 
 
