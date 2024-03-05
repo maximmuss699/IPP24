@@ -31,9 +31,6 @@ class Parser:
         part = token.split('@')
         symbol_type = part[0]
         value_type = part[1]
-        #print(part[0])
-        #print(part[1])
-
 
         if not re.match(Parser.var_regex, token):
             # Check for integers
@@ -71,7 +68,7 @@ class Parser:
             elif symbol_type == "nil" and value_type == "nil":
                 return
 
-            # Symbol doesn't match any allowed syntax, exit with error code 23
+            # Invalid symbol
             else:
                 sys.stderr.write(f"Error: Invalid symbol {token}!\n")
                 sys.exit(23)
@@ -87,44 +84,15 @@ class Parser:
             sys.exit(23)
 
 
-#############################
-
 class XMLWriter:
     def __init__(self):
-        self.root = ET.Element("program", language="IPPcodeXX")
+        self.root = ET.Element("program", language="IPPcode24")
         self.tree = ET.ElementTree(self.root)
 
     def prettify(elem):
         rough_string = ET.tostring(elem,'utf-8')
         reparsed = minidom.parseString(rough_string)
         return '\n'.join([line for line in reparsed.toprettyxml(indent="  ").split('\n')[1:]])
-
-
-    def write_argument(self, number, token, instruction, order):
-        instr_elem = ET.SubElement(self.root, "instruction", order=str(order), opcode=instruction)
-        if "@" in token:
-            part = token.split('@')
-            token_type = part[0]
-            if token_type in ["GF", "TF", "LF"]:
-                token_type = "var"
-                #arg_elem = ET.SubElement(instr_elem, f"arg{number}", type=token_type)
-                #arg_elem.text = token
-            elif token_type in ["int", "bool", "string", "nil"]:
-                token = part[1]
-
-        else:
-
-            if instruction in ["LABEL", "JUMP", "CALL"]:
-                token_type = "label"
-                token = token
-            # <label>
-            else:
-                token_type = "label"
-                token = token
-        arg_elem = ET.SubElement(instr_elem, f"arg{number}", type=token_type)
-        arg_elem.text = token
-
-    ############################################################################################################
 
     def start_instruction(self, instruction, order):
         self.current_instruction = ET.SubElement(self.root, "instruction", order=str(order), opcode=instruction)
@@ -133,7 +101,7 @@ class XMLWriter:
         self.current_instruction = None
 
 
-    def write_argument2(self, number, token, instruction):
+    def write_argument(self, number, token, instruction):
         if "@" in token:
             part = token.split('@')
             token_type = part[0]
@@ -159,23 +127,23 @@ class XMLWriter:
         arg_elem = ET.SubElement(self.current_instruction, f"arg{number}", type=token_type)
         arg_elem.text = token
 
-
-
-
     def finish_xml(self):
         xml_str = '<?xml version="1.0" encoding="UTF-8"?>\n'
         xml_str += XMLWriter.prettify(self.root)
         print(xml_str, end='')
 
 
-
-
-
-
 def print_help():
-    print("""parse.py (IPP project 2024 - part 1)
-    
-    """)
+    print("""IPP project 2024 - part 1
+    This script reads IPP24 code from stdin and writes formatted XML document to stdout.
+    Usage: 
+        python3.10 parse.py [--help]
+    Options:
+        --help      Display this help message
+    Error codes:
+        21 - wrong or missing header in the source code written in IPPcode24
+        22 - unknown or wrong opcode in the source code written in IPPcode24
+        23 - other lexical or syntactic error in the source code written in IPPcode24""")
     print()
 
 
@@ -187,33 +155,36 @@ if len(sys.argv) > 1:
     else:
         sys.stderr.write("Error: Invalid argument!\n")
         sys.exit(10)
-# Čtení vstupu ze stdin
+
 input_content = sys.stdin.read()
 
-
-
-# Rozdělení vstupu na řádky
+# Split the input into lines
 lines = input_content.split('\n')
 
 first_non_empty_line_index = 0
 for i, line in enumerate(lines):
-    if line.strip():
-        first_non_empty_line_index = i
-        break
+    # Skip empty lines and comments
+    if not line.strip():
+        continue
 
-# Если весь ввод состоит из пустых строк
+    if line.strip().startswith('#'):
+        continue
+
+    first_non_empty_line_index = i
+    break
+
+
 if first_non_empty_line_index == len(lines):
-    sys.stderr.write("Error: Empty input!\n")
+    sys.stderr.write("Error: empty input!\n")
     sys.exit(11)
 
-# Извлечение первой непустой строки (заголовка)
+# Check for the .IPPcode24 header
 first_line = lines[first_non_empty_line_index].strip()
-if not first_line.startswith(".IPPcodeXX"):
-    print("Chyba: Chybějící nebo neplatná hlavička '.IPPcode24' na первой непустой строке.")
+if not first_line.startswith(".IPPcode24"):
+    print("Error: header'.IPPcode24'")
     sys.exit(21)
 
-
-
+# Start parsing the input
 xml_writer = XMLWriter()
 instruction_order = 0
 
@@ -232,11 +203,10 @@ for line in lines[first_non_empty_line_index + 1:]:
     tokens = line.strip().split()
     num_of_tokens = len(tokens)
     instruction = tokens[0].upper()
-    #print(tokens)
-    instruction_order += 1
-    #print(instruction_order)
 
-    if line in [".IPPcodeXX"]:
+    instruction_order += 1
+
+    if line in [".IPPcode24"]:
         sys.exit(23)
 
     if instruction in ["CREATEFRAME", "PUSHFRAME", "POPFRAME", "RETURN", "BREAK"]:
@@ -247,25 +217,31 @@ for line in lines[first_non_empty_line_index + 1:]:
     elif instruction in ["DEFVAR", "POPS"]:
         Parser.check_tokens(num_of_tokens, 2)
         Parser.check_var(tokens[1])
-        xml_writer.write_argument(1, tokens[1], instruction, instruction_order)
+        xml_writer.start_instruction(instruction, instruction_order)
+        xml_writer.write_argument(1, tokens[1], instruction)
+        xml_writer.finish_instruction()
 
     elif instruction in ["CALL", "LABEL", "JUMP"]:
         Parser.check_tokens(num_of_tokens, 2)
         Parser.check_label(tokens[1])
-        xml_writer.write_argument(1, tokens[1], instruction, instruction_order)
+        xml_writer.start_instruction(instruction, instruction_order)
+        xml_writer.write_argument(1, tokens[1], instruction)
+        xml_writer.finish_instruction()
 
     elif instruction in ["PUSHS", "WRITE", "EXIT", "DPRINT"]:
         Parser.check_tokens(num_of_tokens, 2)
         Parser.check_symbol(tokens[1])
-        xml_writer.write_argument(1, tokens[1], instruction, instruction_order)
+        xml_writer.start_instruction(instruction, instruction_order)
+        xml_writer.write_argument(1, tokens[1], instruction)
+        xml_writer.finish_instruction()
 
     elif instruction in ["MOVE", "INT2CHAR", "STRLEN", "TYPE", "NOT"]:
         Parser.check_tokens(num_of_tokens, 3)
         Parser.check_var(tokens[1])
         Parser.check_symbol(tokens[2])
         xml_writer.start_instruction(instruction, instruction_order)
-        xml_writer.write_argument2(1, tokens[1], instruction)
-        xml_writer.write_argument2(2, tokens[2], instruction)
+        xml_writer.write_argument(1, tokens[1], instruction)
+        xml_writer.write_argument(2, tokens[2], instruction)
         xml_writer.finish_instruction()
 
     elif instruction in ["READ"]:
@@ -273,10 +249,9 @@ for line in lines[first_non_empty_line_index + 1:]:
         Parser.check_var(tokens[1])
         Parser.check_type(tokens[2])
         xml_writer.start_instruction(instruction, instruction_order)
-        xml_writer.write_argument2(1, tokens[1], instruction)
-        xml_writer.write_argument2(2, tokens[2], instruction)
+        xml_writer.write_argument(1, tokens[1], instruction)
+        xml_writer.write_argument(2, tokens[2], instruction)
         xml_writer.finish_instruction()
-
 
     elif instruction in ["ADD", "SUB", "MUL", "IDIV", "LT", "GT", "EQ", "AND", "OR",
                          "STRI2INT", "CONCAT", "GETCHAR", "SETCHAR"]:
@@ -285,9 +260,9 @@ for line in lines[first_non_empty_line_index + 1:]:
         Parser.check_symbol(tokens[2])
         Parser.check_symbol(tokens[3])
         xml_writer.start_instruction(instruction, instruction_order)
-        xml_writer.write_argument2(1, tokens[1], instruction)
-        xml_writer.write_argument2(2, tokens[2], instruction)
-        xml_writer.write_argument2(3, tokens[3], instruction)
+        xml_writer.write_argument(1, tokens[1], instruction)
+        xml_writer.write_argument(2, tokens[2], instruction)
+        xml_writer.write_argument(3, tokens[3], instruction)
         xml_writer.finish_instruction()
 
 
@@ -297,13 +272,10 @@ for line in lines[first_non_empty_line_index + 1:]:
         Parser.check_symbol(tokens[2])
         Parser.check_symbol(tokens[3])
         xml_writer.start_instruction(instruction, instruction_order)
-        xml_writer.write_argument2(1, tokens[1], instruction)
-        xml_writer.write_argument2(2, tokens[2], instruction)
-        xml_writer.write_argument2(3, tokens[3], instruction)
+        xml_writer.write_argument(1, tokens[1], instruction)
+        xml_writer.write_argument(2, tokens[2], instruction)
+        xml_writer.write_argument(3, tokens[3], instruction)
         xml_writer.finish_instruction()
-
-
-
 
     else:
         sys.stderr.write(f"Error: Invalid instruction {instruction}!\n")
