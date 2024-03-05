@@ -5,7 +5,7 @@ import re
 
 class Parser:
     # Global variables for storing regexes used in the script
-    var_regex = r'\b(LF|TF|GF)@([A-Za-z_\-&%*!?][A-Za-z0-9_\-&%*!?]*)\b'
+    var_regex = r'\b(LF|TF|GF)@([A-Za-z_\-&%*!?\$][A-Za-z0-9_\-&%*!?%\$]*)\b'
     label_regex = r'^([a-zA-Z]|_|-|\$|&|%|\*|!|\?)([a-zA-Z0-9]|_|-|\$|&|%|\*|!|\?)*$'
 
     @staticmethod
@@ -26,6 +26,8 @@ class Parser:
             sys.exit(23)
 
     def check_symbol(token):
+        if '@' not in token:
+            sys.exit(23)
         part = token.split('@')
         symbol_type = part[0]
         value_type = part[1]
@@ -89,7 +91,7 @@ class Parser:
 
 class XMLWriter:
     def __init__(self):
-        self.root = ET.Element("program", language="IPPcode24")
+        self.root = ET.Element("program", language="IPPcodeXX")
         self.tree = ET.ElementTree(self.root)
 
     def prettify(elem):
@@ -115,14 +117,14 @@ class XMLWriter:
             if instruction in ["LABEL", "JUMP", "CALL"]:
                 token_type = "label"
                 token = token
-        # <label>
+            # <label>
             else:
-                token_type = "error"
+                token_type = "label"
                 token = token
         arg_elem = ET.SubElement(instr_elem, f"arg{number}", type=token_type)
         arg_elem.text = token
 
-############################################################################################################
+    ############################################################################################################
 
     def start_instruction(self, instruction, order):
         self.current_instruction = ET.SubElement(self.root, "instruction", order=str(order), opcode=instruction)
@@ -145,10 +147,15 @@ class XMLWriter:
             if instruction in ["LABEL", "JUMP", "CALL"]:
                 token_type = "label"
                 token = token
-        # <label>
+
             else:
-                token_type = "error"
-                token = token
+                if token in ["int", "bool", "string", "nil"]:
+                    token_type = "type"
+                    token = token
+
+                else:
+                    token_type = "label"
+                    token = token
         arg_elem = ET.SubElement(self.current_instruction, f"arg{number}", type=token_type)
         arg_elem.text = token
 
@@ -183,24 +190,34 @@ if len(sys.argv) > 1:
 # Čtení vstupu ze stdin
 input_content = sys.stdin.read()
 
-if not input_content.strip():
-    sys.stderr.write("Error: Empty input!\n")
-    sys.exit(11)
+
 
 # Rozdělení vstupu na řádky
 lines = input_content.split('\n')
 
-# Kontrola prvního řádku
-first_line = lines[0].strip()
-if not first_line.startswith(".IPPcode24"):
-    print("Chyba: Chybějící nebo neplatná hlavička '.IPPcode24' na prvním řádku.")
+first_non_empty_line_index = 0
+for i, line in enumerate(lines):
+    if line.strip():
+        first_non_empty_line_index = i
+        break
+
+# Если весь ввод состоит из пустых строк
+if first_non_empty_line_index == len(lines):
+    sys.stderr.write("Error: Empty input!\n")
+    sys.exit(11)
+
+# Извлечение первой непустой строки (заголовка)
+first_line = lines[first_non_empty_line_index].strip()
+if not first_line.startswith(".IPPcodeXX"):
+    print("Chyba: Chybějící nebo neplatná hlavička '.IPPcode24' na первой непустой строке.")
     sys.exit(21)
+
 
 
 xml_writer = XMLWriter()
 instruction_order = 0
 
-for line in lines[1:]:
+for line in lines[first_non_empty_line_index + 1:]:
 
     if not line.strip():
         continue
@@ -215,9 +232,12 @@ for line in lines[1:]:
     tokens = line.strip().split()
     num_of_tokens = len(tokens)
     instruction = tokens[0].upper()
-    print(tokens)
+    #print(tokens)
     instruction_order += 1
-    print(instruction_order)
+    #print(instruction_order)
+
+    if line in [".IPPcodeXX"]:
+        sys.exit(23)
 
     if instruction in ["CREATEFRAME", "PUSHFRAME", "POPFRAME", "RETURN", "BREAK"]:
         Parser.check_tokens(num_of_tokens, 1)
