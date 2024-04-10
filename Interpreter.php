@@ -287,18 +287,18 @@ class Program{
             }
 
             else if ($this->instructions[$this->instructionPointer]['opcode'] === 'MOVE') {
-                $var_value = $this->instructions[$this->instructionPointer]['arguments'][0]['value'];
-                $var_value2 = $this->instructions[$this->instructionPointer]['arguments'][1]['value'];
+                $var_Name = $this->instructions[$this->instructionPointer]['arguments'][0]['name'];
+                $var_Name2 = $this->instructions[$this->instructionPointer]['arguments'][1]['name'];
                 $type = $this->instructions[$this->instructionPointer]['arguments'][0]['type'];
                 $type2 = $this->instructions[$this->instructionPointer]['arguments'][1]['type'];
                 $frame = $this->instructions[$this->instructionPointer]['arguments'][0]['frame'];
                 $frame2 = $this->instructions[$this->instructionPointer]['arguments'][1]['frame'];
                
                 if ($type === 'var') {
-                    $this->_check($var_value, $frame);
+                    $this->_check($var_Name, $frame);
                 } 
                 if ($type2 === 'var') {
-                    $this->_check($var_value2, $frame2);
+                    $this->_check($var_Name2, $frame2);
                 } 
                 $this->_change_var();
             }
@@ -306,9 +306,9 @@ class Program{
             || $this->instructions[$this->instructionPointer]['opcode'] === 'MUL' 
             || $this->instructions[$this->instructionPointer]['opcode'] === 'SUB' 
             || $this->instructions[$this->instructionPointer]['opcode'] === 'IDIV') {
-                $arg_value1 = $this->instructions[$this->instructionPointer]['arguments'][0]['value'];
-                $arg_value2 = $this->instructions[$this->instructionPointer]['arguments'][1]['value'];
-                $arg_value3 = $this->instructions[$this->instructionPointer]['arguments'][2]['value'];
+                $name1 = $this->instructions[$this->instructionPointer]['arguments'][0]['name'];
+                $name2 = $this->instructions[$this->instructionPointer]['arguments'][1]['name'];
+                $name3 = $this->instructions[$this->instructionPointer]['arguments'][2]['name'];
                 $frame = $this->instructions[$this->instructionPointer]['arguments'][0]['frame'];
                 $frame2 = $this->instructions[$this->instructionPointer]['arguments'][1]['frame'];
                 $frame3 = $this->instructions[$this->instructionPointer]['arguments'][2]['frame'];
@@ -316,12 +316,12 @@ class Program{
                 $type2 = $this->instructions[$this->instructionPointer]['arguments'][1]['type'];
                 $type3 = $this->instructions[$this->instructionPointer]['arguments'][2]['type'];
 
-                $this->_check($arg_value1,$frame);
+                $this->_check($name1,$frame);
                 if ($type2 === 'var') {
-                    $this->_check($arg_value2, $frame2);
+                    $this->_check($name2, $frame2);
                 } 
                 if ($type3 === 'var') {
-                    $this->_check($arg_value3, $frame3 );
+                    $this->_check($name3, $frame3 );
                 }
 
                 $this->_add();
@@ -330,20 +330,20 @@ class Program{
             else if ($this->instructions[$this->instructionPointer]['opcode'] === 'WRITE') {
                
                 $type = $this->instructions[$this->instructionPointer]['arguments'][0]['type'];
-                $var_value = $this->instructions[$this->instructionPointer]['arguments'][0]['value'];
+                $var_name = $this->instructions[$this->instructionPointer]['arguments'][0]['name'];
                 $frame = $this->instructions[$this->instructionPointer]['arguments'][0]['frame'];
                 if($type === 'var'){
-                        $this->_check($var_value,$frame);
-                        echo $this->GF[$var_value] . "\n"; 
+                        $this->_check($var_name,$frame);
+                        echo $this->GF[$var_name] . "\n"; 
                 }else if($type === 'bool'){
 
-                    echo $this->GF[$var_value] . "\n"; 
+                    echo $this->GF[$var_name] . "\n"; 
                 }else if($type === 'nil'){
                     echo "nil\n"; // TODO
-                    echo $this->GF[$var_value] . "\n";}
+                    echo $this->GF[$var_name] . "\n";}
                 else {
-                    if ($var_value !== NULL){
-                    print $var_value . "\n";
+                    if ($var_name !== NULL){
+                    print $var_name . "\n";
                     }
                 
                 }
@@ -359,7 +359,18 @@ class Program{
             else if ($this->instructions[$this->instructionPointer]['opcode'] === 'PUSHFRAME') {
                 if ($this->TF_activator === 0){
                     $this->TF_activator = 1;
-                    echo $this->TF_activator . "\n";
+                    array_push($this->LF, $this->TF);
+                    
+                    $lastFrameInLF = end($this->LF); // Получаем последний элемент из LF
+                    if ($lastFrameInLF === $this->TF) {
+                    echo "TF успешно скопировался в LF.\n";
+                    } else {
+                    echo "Ошибка при копировании TF в LF.\n";
+                    }
+                    var_dump($this->LF);
+
+                    $this->TF = null;
+                    
                 }else{
                     throw new \Exception('Frame is not defined', Errors::NONEXISTENT_FRAME);
                 }
@@ -392,35 +403,28 @@ class Program{
         
     }
     private function _defvar(){
-        $var = $this->instructions[$this->instructionPointer]['arguments'][0]['name'];
+        $var_name = $this->instructions[$this->instructionPointer]['arguments'][0]['name'];
         $frame = $this->instructions[$this->instructionPointer]['arguments'][0]['frame'];
         $var_value = $this->instructions[$this->instructionPointer]['arguments'][0]['value'];
         echo "Var: " . $var_value . "\n";
         echo "Frame: " . $frame . "\n";
-        $this->variables[$frame][$var] = NULL; 
+        $this->variables[$frame][$var_name] = NULL; 
         if ($frame === 'GF') {
-            if (array_key_exists($var_value, $this->GF)) {
+            if (array_key_exists($var_name, $this->GF)) {
                 throw new \Exception('Variable already exists in frame', Errors::NONEXISTENT_FRAME);
             }
            
-            $this->GF[$var_value] = null;
-            echo "GF stack: ";
-            foreach ($this->GF as $value) {
-                echo $value . ", ";
-                }
-                    echo "\n";
+            $this->GF[$var_name] = null;
+            var_dump($this->GF);
         } elseif ($frame === 'LF') {
-            if (array_key_exists($var_value, $this->LF)) {
+            if (array_key_exists($var_name, $this->LF)) {
                 throw new \Exception('Variable already exists in frame', Errors::NONEXISTENT_FRAME);
             }
-            $this->LF[$var_value] = null;
+            $this->LF[$var_name] = null;
             echo "LF stack: ";
-            foreach ($this->GF as $value) {
-                echo $value . ", ";
-                }
-                    echo "\n";
+            
         } elseif ($frame === 'TF') {
-            if (array_key_exists($var_value, $this->TF)) {
+            if (array_key_exists($var_name, $this->TF)) {
                 throw new \Exception('Variable already exists in frame', Errors::NONEXISTENT_FRAME);
             }
             
@@ -428,18 +432,13 @@ class Program{
             {
                 throw new \Exception('Frame is not defined', Errors::NONEXISTENT_FRAME);
             }
-            $this->TF[$var_value] = null;
-            echo "TF stack: ";
-            foreach ($this->GF as $value) {
-                echo $value . ", ";
-                }
-                    echo "\n";
+            $this->TF[$var_name] = null;
+            
         }
     }
     private function _check($varName, $frame){
         
     
-       
         if ($frame === 'GF') {
             if (!array_key_exists($varName, $this->GF)) {
                 throw new \Exception('Variable ' . $varName . ' does not exist in frame CHECK', Errors::NONEXISTENT_VARIABLE);
@@ -464,12 +463,14 @@ class Program{
         if (isset($this->instructions[$this->instructionPointer]['arguments'][0]) && 
         isset($this->instructions[$this->instructionPointer]['arguments'][1])) {
 
-        $arg1Value = $this->instructions[$this->instructionPointer]['arguments'][0]['value'];
+        $arg1Value = $this->instructions[$this->instructionPointer]['arguments'][0]['name'];
         $frame = $this->instructions[$this->instructionPointer]['arguments'][0]['frame'];
         $arg2Value = $this->instructions[$this->instructionPointer]['arguments'][1]['value'];
-        $type1 = $this->instructions[$this->instructionPointer]['arguments'][0]['type'];
+        $type2 = $this->instructions[$this->instructionPointer]['arguments'][1]['type'];
 
-        
+        if ($type2 === 'var') {
+            $arg2Value = $this->instructions[$this->instructionPointer]['arguments'][1]['name'];
+        }
         if ($frame === 'GF') { 
             $this->GF[$arg1Value] = $arg2Value;
         } elseif ($frame === 'LF') {
@@ -480,14 +481,12 @@ class Program{
             $this->TF[$arg1Value] = $arg2Value;
         }
         
-        foreach ($this->GF as $value) {
-                echo $value . ", ";
-                }
-                    echo "\n";
         
+        var_dump($this->GF);
         
         
         echo "Значение переменной $arg1Value изменено на $arg2Value\n";
+       
     } else {
         echo "Одного из аргументов (arg1 или arg2) не существует в данной инструкции.\n";
     }
@@ -496,12 +495,13 @@ class Program{
 
 
     private function _add(){
-        $arg_value1 = $this->instructions[$this->instructionPointer]['arguments'][0]['value'];
-        $arg_value2 = $this->instructions[$this->instructionPointer]['arguments'][1]['value'];
-        $arg_value3 = $this->instructions[$this->instructionPointer]['arguments'][2]['value'];
+        $arg_name1 = $this->instructions[$this->instructionPointer]['arguments'][0]['name'];
+        $arg_name2 = $this->instructions[$this->instructionPointer]['arguments'][1]['name'];
+        $arg_name3 = $this->instructions[$this->instructionPointer]['arguments'][2]['name'];
         $frame = $this->instructions[$this->instructionPointer]['arguments'][0]['frame'];
         $frame2 = $this->instructions[$this->instructionPointer]['arguments'][1]['frame'];
         $frame3 = $this->instructions[$this->instructionPointer]['arguments'][2]['frame'];
+        
         
 
         $type2 = $this->instructions[$this->instructionPointer]['arguments'][1]['type'];
@@ -510,10 +510,10 @@ class Program{
         $value3 = $this->instructions[$this->instructionPointer]['arguments'][2]['value'];
 
         
-        $value2 = ($type2 === 'var') ? $this->{$frame}[$arg_value2] : $this->instructions[$this->instructionPointer]['arguments'][1]['value'];
-        $value3 = ($type3 === 'var') ? $this->{$frame}[$arg_value3] : $this->instructions[$this->instructionPointer]['arguments'][2]['value'];
+        $value2 = ($type2 === 'var') ? $this->{$frame}[$arg_name2] : $this->instructions[$this->instructionPointer]['arguments'][1]['value'];
+        $value3 = ($type3 === 'var') ? $this->{$frame}[$arg_name3] : $this->instructions[$this->instructionPointer]['arguments'][2]['value'];
 
-        if (is_numeric($value2) && $value2 == (int)$value2 && is_numeric($value3) && $value3 == (int)$value3) {
+        if (is_numeric($value2) && is_numeric($value3) && $value2 == (int)$value2  && $value3 == (int)$value3) {
             $value2 = (int)$value2;
             $value3 = (int)$value3;
         } else {
@@ -536,22 +536,14 @@ class Program{
 
 
 
-        if (!array_key_exists($arg_value1, $this->{$frame})) {
-            throw new \Exception("Variable $arg_value1 does not exist in frame $frame");
+        if (!array_key_exists($arg_name1, $this->{$frame})) {
+            throw new \Exception("Variable $arg_name1 does not exist in frame $frame");
         }
-        $this->{$frame}[$arg_value1] = $result;
-        echo "Result: " .  $this->{$frame}[$arg_value1] . "\n";
+        $this->{$frame}[$arg_name1] = $result;
+        echo "Result: " .  $this->{$frame}[$arg_name1] . "\n";
         
-        foreach ($this->GF as $value) {
-                echo $value . ", ";
-                }
-                    echo "\n";
+        var_dump($this->GF);
         
-        
-        
-        
-
-
     }
 
     private function _check_symbol(){
