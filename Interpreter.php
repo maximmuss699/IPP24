@@ -96,6 +96,7 @@ class XmlParser {
                         
                         throw new \Exception('Invalid argument order', Errors::UNEXPECTED_XML_STRUCTURE);
                     }
+                    $argNum = intval(substr($child->nodeName, 3));
                     
                     $argType = $child->getAttribute('type');
                     $argValue = $child->textContent;
@@ -138,7 +139,7 @@ class XmlParser {
                         }
                         $argValue = self::stringEscape($argValue);
                     }
-                    $arguments[] = ['type' => $argType, 'value' => $argValue, 'frame' => $varFrame, 'name' => $varName];
+                    $arguments[$argNum] = ['type' => $argType, 'value' => $argValue, 'frame' => $varFrame, 'name' => $varName];
                     if (in_array($argOrder, $check_order)) // check if the order of arguments is not duplicated
                     {
                         throw new \Exception('Duplicate argument order', Errors::UNEXPECTED_XML_STRUCTURE);
@@ -160,12 +161,15 @@ class XmlParser {
             if (count($args_length) !== (new Arguments_length())->args_length[$opcode]) {
                 throw new \Exception('Bad number of arguments for opcode', Errors::UNEXPECTED_XML_STRUCTURE);
             }
-           
+
+            
+            ksort($arguments);
             
             
 
-            $parsedInstructions[] = ['order' => $order, 'opcode' => $opcode, 'arguments' => $arguments];
+            $parsedInstructions[] = ['order' => $order, 'opcode' => $opcode, 'arguments' =>array_values($arguments)];
         }
+        usort($parsedInstructions, [self::class, 'sortInstructionsByOrder']);
 
         return $parsedInstructions;
     }
@@ -177,6 +181,11 @@ class XmlParser {
         };
         return preg_replace_callback($pattern, $callback, $string);
     }
+    private static function sortInstructionsByOrder($a, $b) {
+        return $a['order'] - $b['order'];
+    }
+
+
 
 
 }
@@ -331,57 +340,117 @@ class Program{
                
                 $type = $this->instructions[$this->instructionPointer]['arguments'][0]['type'];
                 $var_name = $this->instructions[$this->instructionPointer]['arguments'][0]['name'];
+                $var_value = $this->instructions[$this->instructionPointer]['arguments'][0]['value'];
                 $frame = $this->instructions[$this->instructionPointer]['arguments'][0]['frame'];
+                echo "Type: " . $type . "\n";
+                echo "Var_name: " . $var_name . "\n";
+                echo "Frame: " . $frame . "\n";
+                if(isset($this->{$frame})){
+                    var_dump($this->{$frame});
+                }
+                
                 if($type === 'var'){
                         $this->_check($var_name,$frame);
-                        echo $this->GF[$var_name] . "\n"; 
+                        echo $this->{$frame}[$var_name] . "\n"; 
                 }else if($type === 'bool'){
 
-                    echo $this->GF[$var_name] . "\n"; 
+                    echo $this->{$frame}[$var_name] . "\n"; 
                 }else if($type === 'nil'){
                     echo "nil\n"; // TODO
-                    echo $this->GF[$var_name] . "\n";}
+                    echo $this->{$frame}[$var_name] . "\n";}
                 else {
-                    if ($var_name !== NULL){
-                    print $var_name . "\n";
-                    }
+                    
+                    print $var_value . "\n";
+                    
                 
                 }
 
             }
             else if ($this->instructions[$this->instructionPointer]['opcode'] === 'JUMP') {
-                $this->_find_label();
+               
+                $label = $this->instructions[$this->instructionPointer]['arguments'][0]['value'];
+                $label_index = $this->findLabelIndex($label);
+                if ($label_index === -1) {
+                    throw new \Exception('Label does not exist', Errors::SEMANTIC_CHECKS);
+                }else{
+                    $this->instructionPointer = $label_index;
+                }
+
+            }
+            else if ($this->instructions[$this->instructionPointer]['opcode'] === 'JUMPIFEQ') {
+                $name1 = $this->instructions[$this->instructionPointer]['arguments'][0]['name'];
+                $name2 = $this->instructions[$this->instructionPointer]['arguments'][1]['name'];
+                $name3 = $this->instructions[$this->instructionPointer]['arguments'][2]['name'];
+                $frame = $this->instructions[$this->instructionPointer]['arguments'][0]['frame'];
+                $frame2 = $this->instructions[$this->instructionPointer]['arguments'][1]['frame'];
+                $frame3 = $this->instructions[$this->instructionPointer]['arguments'][2]['frame'];
+                $type = $this->instructions[$this->instructionPointer]['arguments'][0]['type'];
+                $type2 = $this->instructions[$this->instructionPointer]['arguments'][1]['type'];
+                $type3 = $this->instructions[$this->instructionPointer]['arguments'][2]['type'];
+                
+
+                $this->_check($name1,$frame);
+                if ($type2 === 'var') {
+                    $this->_check($name2, $frame2);
+                } 
+                if ($type3 === 'var') {
+                    $this->_check($name3, $frame3 );
+                }
+
+                $value2 = ($type2 === 'var') ? $this->{$frame2}[$name2] : $this->instructions[$this->instructionPointer]['arguments'][1]['value'];
+                $value3 = ($type3 === 'var') ? $this->{$frame3}[$name3] : $this->instructions[$this->instructionPointer]['arguments'][2]['value'];
+                $value2 = (int)$value2;
+                $value3 = (int)$value3;
+                if($value2 === $value3){
+                    $label = $this->instructions[$this->instructionPointer]['arguments'][0]['value'];
+                    $label_index = $this->findLabelIndex($label);
+                    if ($label_index === -1) {
+                        throw new \Exception('Label does not exist', Errors::SEMANTIC_CHECKS);
+                    }else{
+                        $this->instructionPointer = $label_index;
+                    }
+                }
+              
+               
+                
+            
             }
             else if ($this->instructions[$this->instructionPointer]['opcode'] === 'CREATEFRAME') {
             $this->TF_activator = 0;
+            $this->TF = [];
           
             }
             else if ($this->instructions[$this->instructionPointer]['opcode'] === 'PUSHFRAME') {
+            
                 if ($this->TF_activator === 0){
                     $this->TF_activator = 1;
-                    array_push($this->LF, $this->TF);
-                    
-                    $lastFrameInLF = end($this->LF); // Получаем последний элемент из LF
-                    if ($lastFrameInLF === $this->TF) {
-                    echo "TF успешно скопировался в LF.\n";
-                    } else {
-                    echo "Ошибка при копировании TF в LF.\n";
-                    }
+                   // array_push($this->LF, $this->TF);
+                   if($this->TF !== null){
+                    $this->LF = $this->TF;
+                   }else{
+                          throw new \Exception('Frame is not defined', Errors::NONEXISTENT_FRAME);
+                   }
+                   echo "LF: \n";
                     var_dump($this->LF);
 
                     $this->TF = null;
                     
                 }else{
-                    throw new \Exception('Frame is not defined', Errors::NONEXISTENT_FRAME);
+                    throw new \Exception('Temporary frame is not defined', Errors::NONEXISTENT_FRAME);
                 }
             }
             else if ($this->instructions[$this->instructionPointer]['opcode'] === 'POPFRAME') {
-                if ($this->TF_activator === 0){
+               
                     $this->TF_activator = 0;
-                    echo $this->TF_activator . "\n";
-                }else{
-                    throw new \Exception('Frame is not defined', Errors::NONEXISTENT_FRAME);
-                }
+                    
+                    if (!empty($this->LF)){
+                        $this->TF = $this->LF;
+                        echo "TF: \n";
+                        var_dump($this->TF);
+                    }
+                    else{
+                        throw new \Exception('LOcal frame is not defined', Errors::NONEXISTENT_FRAME);
+                        }
             }
             
             
@@ -406,8 +475,8 @@ class Program{
         $var_name = $this->instructions[$this->instructionPointer]['arguments'][0]['name'];
         $frame = $this->instructions[$this->instructionPointer]['arguments'][0]['frame'];
         $var_value = $this->instructions[$this->instructionPointer]['arguments'][0]['value'];
-        echo "Var: " . $var_value . "\n";
-        echo "Frame: " . $frame . "\n";
+        //echo "Var: " . $var_value . "\n";
+       // echo "Frame: " . $frame . "\n";
         $this->variables[$frame][$var_name] = NULL; 
         if ($frame === 'GF') {
             if (array_key_exists($var_name, $this->GF)) {
@@ -415,13 +484,15 @@ class Program{
             }
            
             $this->GF[$var_name] = null;
+            echo "frame: " . $frame . "\n";
             var_dump($this->GF);
         } elseif ($frame === 'LF') {
             if (array_key_exists($var_name, $this->LF)) {
                 throw new \Exception('Variable already exists in frame', Errors::NONEXISTENT_FRAME);
             }
             $this->LF[$var_name] = null;
-            echo "LF stack: ";
+            echo "frame: " . $frame . "\n";
+            var_dump($this->{$frame});
             
         } elseif ($frame === 'TF') {
             if (array_key_exists($var_name, $this->TF)) {
@@ -433,6 +504,8 @@ class Program{
                 throw new \Exception('Frame is not defined', Errors::NONEXISTENT_FRAME);
             }
             $this->TF[$var_name] = null;
+            echo "frame: " . $frame . "\n";
+            var_dump($this->{$frame});
             
         }
     }
@@ -441,18 +514,22 @@ class Program{
     
         if ($frame === 'GF') {
             if (!array_key_exists($varName, $this->GF)) {
-                throw new \Exception('Variable ' . $varName . ' does not exist in frame CHECK', Errors::NONEXISTENT_VARIABLE);
+                throw new \Exception('Variable ' . $varName . ' does not exist in GF frame CHECK', Errors::NONEXISTENT_VARIABLE);
             }
             
         } elseif ($frame === 'LF') {
             if (!array_key_exists($varName, $this->LF)) {
-                throw new \Exception('Variable does not exist in frame CHECK', Errors::NONEXISTENT_VARIABLE);
+                throw new \Exception('Variable does not exist in LF frame CHECK', Errors::NONEXISTENT_VARIABLE);
             }
             
         } elseif ($frame === 'TF') {
+            if (isset($this->TF) && !empty($this->TF)){
             if (!array_key_exists($varName, $this->TF)) {
-                throw new \Exception('Variable does not exist in frame CHECK', Errors::NONEXISTENT_VARIABLE);
+                throw new \Exception('Variable does not exist in TF frame CHECK', Errors::NONEXISTENT_VARIABLE);
             }
+        }else{
+            throw new \Exception('Frame is not defined', Errors::NONEXISTENT_FRAME);
+        }
            
         }
     
@@ -481,12 +558,10 @@ class Program{
             $this->TF[$arg1Value] = $arg2Value;
         }
         
+        echo "frame: " . $frame . "\n";
+        var_dump($this->{$frame});
         
-        var_dump($this->GF);
-        
-        
-        echo "Значение переменной $arg1Value изменено на $arg2Value\n";
-       
+           
     } else {
         echo "Одного из аргументов (arg1 или arg2) не существует в данной инструкции.\n";
     }
@@ -510,8 +585,8 @@ class Program{
         $value3 = $this->instructions[$this->instructionPointer]['arguments'][2]['value'];
 
         
-        $value2 = ($type2 === 'var') ? $this->{$frame}[$arg_name2] : $this->instructions[$this->instructionPointer]['arguments'][1]['value'];
-        $value3 = ($type3 === 'var') ? $this->{$frame}[$arg_name3] : $this->instructions[$this->instructionPointer]['arguments'][2]['value'];
+        $value2 = ($type2 === 'var') ? $this->{$frame2}[$arg_name2] : $this->instructions[$this->instructionPointer]['arguments'][1]['value'];
+        $value3 = ($type3 === 'var') ? $this->{$frame3}[$arg_name3] : $this->instructions[$this->instructionPointer]['arguments'][2]['value'];
 
         if (is_numeric($value2) && is_numeric($value3) && $value2 == (int)$value2  && $value3 == (int)$value3) {
             $value2 = (int)$value2;
@@ -546,40 +621,19 @@ class Program{
         
     }
 
-    private function _check_symbol(){
-
-
-    }
-
-
-
-
-
-    private function _find_label(){
-        $label = $this->instructions[$this->instructionPointer]['arguments'][0]['value'];
-        if (!array_key_exists($label, $this->labels)) {
-            throw new \Exception('Label does not exist', Errors::NONEXISTENT_VARIABLE);
-        }
-        
-        $instructionPointer2 = 0;
-       //echo "Instruction count: " . count($this->instructions) . "\n";
-       while ($instructionPointer2 < count($this->instructions)) {
-            if ($this->instructions[$instructionPointer2]['opcode'] === 'LABEL') {
-                echo "LABEL FIND: " . $this->instructions[$this->instructionPointer]['arguments'][0]['value'] . "\n";
-                //$this->instructionPointer = $instructionPointer2;
-                break;
+    private function findLabelIndex($labelName) {
+        foreach ($this->instructions as $index => $instruction) {
+            if ($instruction['opcode'] === 'LABEL' && $instruction['arguments'][0]['value'] === $labelName) {
+                echo "Label: " . $labelName . "\n";
+                echo "Index: " . $index . "\n";
+                return $index;
             }
-            
-            $instructionPointer2++;
-       }
-
-        
+           
+        }
+        return -1; // Если метка не найдена
     }
 
 
-  
-    
-    
 
 
 
