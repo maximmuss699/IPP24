@@ -10,36 +10,21 @@ class Interpreter extends AbstractInterpreter
     public function execute(): int
     {
        
-
-
         try {
             
-            //$domDocument = $this->source->getDOMDocument();
-            //$xmlContent = $domDocument->saveXML();
-            //$this->stdout->writeString($xmlContent);
+            
             $domDocument = $this->source->getDOMDocument(); 
             $parsedInstructions = XmlParser::parse($domDocument);
-            foreach ($parsedInstructions as $instruction) {
-                
-    
-                foreach ($instruction['arguments'] as  $index => $argument) {
-                //$argInfo = "Instruction: Order={$instruction['order']}, Opcode={$instruction['opcode']}, Arg".($index + 1)." - Type={$argument['type']}, Value={$argument['value']}\n";                    
-                //$this->stdout->writeString($argInfo);
-                //var_dump($argument['value']);
-
-                
-                }
-            }
-            $interpret = new Program($parsedInstructions);
+            $interpret = new Program($parsedInstructions, $this->input, $this->stdout);
             $interpret->run();
-           // $this->stdout->writeString("Success\n");
+           
             return 0; // 
         } catch (\Exception $e) {
             $this->stderr->writeString("Error: " . $e->getMessage() . "\n");
             //echo $e->getCode();
             exit($e->getCode());
         }
-        throw new NotImplementedException;
+       
     }
 
 
@@ -133,7 +118,7 @@ class XmlParser {
                         }
                     } elseif ($argType === 'bool') {
                         $boolValue = boolval($argValue); // Преобразование строки в булево значение
-                        if ($boolValue !== true && $boolValue !== false) {
+                        if ($boolValue === null) {
                             throw new \Exception('Invalid bool value', Errors::UNEXPECTED_XML_STRUCTURE);
                         }
                     } elseif ($argType === 'nil') {
@@ -235,41 +220,11 @@ class Opcodes{
 }
 class Arguments_length{
     public $args_length = [
-        "MOVE" => 2,
-        "CREATEFRAME" => 0,
-        "PUSHFRAME" => 0,
-        "POPFRAME" => 0,
-        "DEFVAR" => 1,
-        "CALL" => 1,
-        "RETURN" => 0,
-        "PUSHS" => 1,
-        "POPS" => 1,
-        "ADD" => 3,
-        "SUB" => 3,
-        "MUL" => 3,
-        "IDIV" => 3,
-        "LT" => 3,
-        "GT" => 3,
-        "EQ" => 3,
-        "AND" => 3,
-        "OR" => 3,
-        "NOT" => 2,
-        "INT2CHAR" => 2,
-        "STRI2INT" => 3,
-        "READ" => 2,
-        "WRITE" => 1,
-        "CONCAT" => 3,
-        "STRLEN" => 2,
-        "GETCHAR" => 3,
-        "SETCHAR" => 3,
-        "TYPE" => 2,
-        "LABEL" => 1,
-        "JUMP" => 1,
-        "JUMPIFEQ" => 3,
-        "JUMPIFNEQ" => 3,
-        "EXIT" => 1,
-        "DPRINT" => 1,
-        "BREAK" => 0
+        "MOVE" => 2,  "CREATEFRAME" => 0,  "PUSHFRAME" => 0,   "POPFRAME" => 0,   "DEFVAR" => 1,  "CALL" => 1,
+        "RETURN" => 0,    "PUSHS" => 1,    "POPS" => 1,  "ADD" => 3, "SUB" => 3,    "MUL" => 3,
+        "IDIV" => 3,  "LT" => 3, "GT" => 3,   "EQ" => 3,  "AND" => 3,    "OR" => 3, "NOT" => 2,
+        "INT2CHAR" => 2, "STRI2INT" => 3, "READ" => 2, "WRITE" => 1, "CONCAT" => 3, "STRLEN" => 2, "GETCHAR" => 3,"SETCHAR" => 3,
+        "TYPE" => 2,"LABEL" => 1,"JUMP" => 1,"JUMPIFEQ" => 3, "JUMPIFNEQ" => 3,"EXIT" => 1,"DPRINT" => 1,"BREAK" => 0
     ];
 
 
@@ -297,6 +252,11 @@ class Errors {
 
 
 
+
+
+
+
+
 class Program{
     public $instructions = [];  
     public $GF = [];
@@ -309,20 +269,22 @@ class Program{
     public $instructionCount = 0;
     public $labels = [];
     public $variables = [];
-    public function __construct($instructions){
-        $this->instructions = $instructions;       
+    public $input;
+    public $output;
+    public function __construct($instructions, $input, $output){
+        $this->instructions = $instructions;
+        $this->input = $input;
+        $this->output = $output;       
      
     }
 
     public function run(){
-       //var_dump($this->instructions);
+       
        $this->_getLabels($this->instructions);
        $this->instructionPointer = 0;
-       //echo "Instruction count: " . count($this->instructions) . "\n";
        while ($this->instructionPointer < count($this->instructions)) {
             $this->instructions[$this->instructionPointer];
             $opcode = $this->instructions[$this->instructionPointer]['opcode'];
-          //  echo "Instruction: " . $this->instructions[$this->instructionPointer]['opcode'] . "\n";
             if ($opcode === 'DEFVAR') {
                 $this->_defvar();
             }
@@ -375,21 +337,27 @@ class Program{
             }else if($opcode === 'CONCAT' || $opcode === 'STRLEN' || $opcode === 'GETCHAR' || $opcode === 'SETCHAR' || $opcode === 'INT2CHAR' || $opcode === 'STRI2INT'){
                 $name1 = $this->instructions[$this->instructionPointer]['arguments'][0]['name'];
                 $name2 = $this->instructions[$this->instructionPointer]['arguments'][1]['name'];
-                $name3 = $this->instructions[$this->instructionPointer]['arguments'][2]['name'];
                 $frame = $this->instructions[$this->instructionPointer]['arguments'][0]['frame'];
                 $frame2 = $this->instructions[$this->instructionPointer]['arguments'][1]['frame'];
-                $frame3 = $this->instructions[$this->instructionPointer]['arguments'][2]['frame'];
                 $type = $this->instructions[$this->instructionPointer]['arguments'][0]['type'];
                 $type2 = $this->instructions[$this->instructionPointer]['arguments'][1]['type'];
-                $type3 = $this->instructions[$this->instructionPointer]['arguments'][2]['type'];
 
+                if (isset ($this->instructions[$this->instructionPointer]['arguments'][2])) {
+                    $name3 = $this->instructions[$this->instructionPointer]['arguments'][2]['name'];
+                    $frame3 = $this->instructions[$this->instructionPointer]['arguments'][2]['frame'];
+                    $type3 = $this->instructions[$this->instructionPointer]['arguments'][2]['type'];
+                    if ($type3 === 'var') {
+                        $this->_check($name3, $frame3 );
+                    }
+    
+                }
+              
+            
                 $this->_check($name1,$frame);
                 if ($type2 === 'var') {
                     $this->_check($name2, $frame2);
                 } 
-                if ($type3 === 'var') {
-                    $this->_check($name3, $frame3 );
-                }
+                
 
                 $this->_strings();
 
@@ -464,15 +432,12 @@ class Program{
 
                 }else if($type === 'bool'){
                     print $var_value . "\n";
-                }else if($type === 'nil'){
-                     
-                    
+                }else if($type === 'nil'){ 
                 }
                 else {
                     
                     print $var_value . "\n";
                     
-                
                 }
 
             }
@@ -499,14 +464,14 @@ class Program{
                     }
                 }
                 if($type2 === 'int'){
-                    $input = fgets(STDIN);
+                    $input = $this->input->readString();
                     $input = intval($input);
                     $this->{$frame}[$var_name] = $input;
                 }else if($type2 === 'string'){
-                    $input = fgets(STDIN);
+                    $input = $this->input->readString();
                     $this->{$frame}[$var_name] = $input;
                 }else if($type2 === 'bool'){
-                    $input = fgets(STDIN);
+                    $input = $this->input->readString();
                     if($input === 'true'){
                         $this->{$frame}[$var_name] = true;
                     }else{
@@ -600,6 +565,35 @@ class Program{
                 
             
             }
+            else if ($opcode === 'TYPE'){
+                $var_name = $this->instructions[$this->instructionPointer]['arguments'][0]['name'];
+                $var_name2 = $this->instructions[$this->instructionPointer]['arguments'][1]['name'];
+                $frame = $this->instructions[$this->instructionPointer]['arguments'][0]['frame'];
+                $frame2 = $this->instructions[$this->instructionPointer]['arguments'][1]['frame'];
+                $type = $this->instructions[$this->instructionPointer]['arguments'][0]['type'];
+                $type2 = $this->instructions[$this->instructionPointer]['arguments'][1]['type'];
+                $this->_check($var_name,$frame);
+                if ($type2 === 'var') {
+                    $this->_check($var_name2, $frame2);
+                } 
+                $this->_type();
+                
+
+            }
+            else if ($this->instructions[$this->instructionPointer]['opcode'] === 'BREAK') {
+                echo "Instruction pointer: " . $this->instructionPointer . "\n";
+                echo "Global frame: \n";
+                var_dump($this->GF);
+                echo "Local frame: \n";
+                var_dump($this->LF);
+                echo "Temporary frame: \n";
+                var_dump($this->TF);
+                echo "Data stack: \n";
+                var_dump($this->dataStack);
+                echo "Call stack: \n";
+                var_dump($this->callStack);
+
+            }
             else if ($this->instructions[$this->instructionPointer]['opcode'] === 'CREATEFRAME') {
             $this->TF_activator = 0;
            
@@ -666,7 +660,34 @@ class Program{
                 if (!is_numeric($exitCode)) {
                     throw new \Exception('Exit code must be a number', Errors::WRONG_OPERAND_TYPE);
                 }
+                if ($exitCode < 0 || $exitCode > 9) {
+                    throw new \Exception('Exit code must be in range 0-49', Errors::WRONG_OPERANT_VALUE);
+                }
                 exit($exitCode);
+            }
+            else if($opcode === 'PUSHS'){
+                $type = $this->instructions[$this->instructionPointer]['arguments'][0]['type'];
+                $value = $this->instructions[$this->instructionPointer]['arguments'][0]['value'];
+                $frame = $this->instructions[$this->instructionPointer]['arguments'][0]['frame'];
+                $name = $this->instructions[$this->instructionPointer]['arguments'][0]['name'];
+                if($type === 'var'){
+                    $this->_check($name,$frame);
+                    $value = $this->{$frame}[$name];
+                }
+                array_push($this->dataStack, $value);
+            }
+            else if($opcode === 'POPS'){
+                $var_name = $this->instructions[$this->instructionPointer]['arguments'][0]['name'];
+                $type = $this->instructions[$this->instructionPointer]['arguments'][0]['type'];
+                $frame = $this->instructions[$this->instructionPointer]['arguments'][0]['frame'];
+                $this->_check($var_name,$frame);
+                if (empty($this->dataStack)) {
+                    throw new \Exception('Data stack is empty', Errors::MISSING_VALUE);
+                }else{
+                    $this->{$frame}[$var_name] = array_pop($this->dataStack);
+                }
+               
+
             }
             
             
@@ -914,22 +935,31 @@ class Program{
     private function _strings(){
         $arg_name1 = $this->instructions[$this->instructionPointer]['arguments'][0]['name'];
         $arg_name2 = $this->instructions[$this->instructionPointer]['arguments'][1]['name'];
-        $arg_name3 = $this->instructions[$this->instructionPointer]['arguments'][2]['name'];
+        $value1 = $this->instructions[$this->instructionPointer]['arguments'][0]['value'];
         $frame = $this->instructions[$this->instructionPointer]['arguments'][0]['frame'];
         $frame2 = $this->instructions[$this->instructionPointer]['arguments'][1]['frame'];
-        $frame3 = $this->instructions[$this->instructionPointer]['arguments'][2]['frame'];
+       
+
+        if(isset ($this->instructions[$this->instructionPointer]['arguments'][2])){
+            $frame3 = $this->instructions[$this->instructionPointer]['arguments'][2]['frame'];
+            $type3 = $this->instructions[$this->instructionPointer]['arguments'][2]['type'];
+            $arg_name3 = $this->instructions[$this->instructionPointer]['arguments'][2]['name'];
+            $value3 = $this->instructions[$this->instructionPointer]['arguments'][2]['value'];
+            $value3 = ($type3 === 'var') ? $this->{$frame3}[$arg_name3] : $this->instructions[$this->instructionPointer]['arguments'][2]['value'];
+        }
+
+        
+     
         $opcodeArg = $this->instructions[$this->instructionPointer]['opcode'];
         
         
 
         $type2 = $this->instructions[$this->instructionPointer]['arguments'][1]['type'];
-        $type3 = $this->instructions[$this->instructionPointer]['arguments'][2]['type'];
         $value2 = $this->instructions[$this->instructionPointer]['arguments'][1]['value'];
-        $value3 = $this->instructions[$this->instructionPointer]['arguments'][2]['value'];
+        
 
         
         $value2 = ($type2 === 'var') ? $this->{$frame2}[$arg_name2] : $this->instructions[$this->instructionPointer]['arguments'][1]['value'];
-        $value3 = ($type3 === 'var') ? $this->{$frame3}[$arg_name3] : $this->instructions[$this->instructionPointer]['arguments'][2]['value'];
        //var_dump($value2);
        //var_dump($value3);
         if ($opcodeArg === 'CONCAT') {
@@ -955,19 +985,30 @@ class Program{
                 throw new \Exception("Values for GETCHAR operation are not strings or index is out of bounds", Errors::WRONG_OPERAND_TYPE);
             }
         } else if ($opcodeArg === 'SETCHAR') {
-            if ($this->checkVariableString($value2) && is_int($value3) && $this->checkVariableString($value3)) {
-                $result = $value2;
-                $result[$value3] = $value3;
+            if ($this->checkVariableString($value1) && is_int($value2) && $this->checkVariableString($value3))
+             {
+                if(isset($value1[$value2])){
+                $value1[$value2] = $value3;
+                $result = $value1;
+                }else{
+                    throw new \Exception("Index is out of bounds", Errors::WRONG_STRING);
+                }
             } else {
                 throw new \Exception("Values for SETCHAR operation are not strings", Errors::WRONG_OPERAND_TYPE);
             }
         } else if ($opcodeArg === 'INT2CHAR') {
             if (is_int($value2)) {
-                $result = chr($value2);
+                
+                if ($value2 >= 0 && $value2 <= 1114111) {
+                    $result = chr($value2);
+                } else {
+                    throw new \Exception("Invalid Unicode ordinal value", Errors::WRONG_STRING);
+                }
             } else {
                 throw new \Exception("Values for INT2CHAR operation are not integers", Errors::WRONG_OPERAND_TYPE);
             }
-        } else if ($opcodeArg === 'STRI2INT') {
+        }
+         else if ($opcodeArg === 'STRI2INT') {
             if ($this->checkVariableString($value2) && is_int($value3)) {
                 $result = ord($value2[$value3]);
             } else {
@@ -1002,7 +1043,7 @@ class Program{
             $frame3 = null;
             $value2 = $value2 === 'true' ? true : ($value2 === 'false' ? false : $value2);
             if (is_bool($value2)) {
-                $value2 = $value2 === 'true' ? true : ($value2 === 'false' ? false : $value2);
+            
                 $result = !$value2;
                 //var_dump($result);
                // var_dump($value2);
@@ -1022,8 +1063,7 @@ class Program{
             $value2 = $value2 === 'true' ? true : ($value2 === 'false' ? false : $value2);
             $value3 = $value3 === 'true' ? true : ($value3 === 'false' ? false : $value3);
             if ( $opcodeArg === 'AND'){
-                $value2 = $value2 === 'true' ? true : ($value2 === 'false' ? false : $value2);
-                $value3 = $value3 === 'true' ? true : ($value3 === 'false' ? false : $value3);
+    
                 if (is_bool($value2) && is_bool($value3)) {
                     $result = $value2 && $value3;
                     if (!array_key_exists($arg_name1, $this->{$frame})) {
@@ -1071,19 +1111,41 @@ class Program{
         }
     }
     }
-    private function checkVariablearithmetic($value) {
-        if (is_bool($value)) {
-           return 1;
+    private function _type(){
+        $arg_name1 = $this->instructions[$this->instructionPointer]['arguments'][0]['name'];
+        $arg_name2 = $this->instructions[$this->instructionPointer]['arguments'][1]['name'];
+        $frame = $this->instructions[$this->instructionPointer]['arguments'][0]['frame'];
+        $frame2 = $this->instructions[$this->instructionPointer]['arguments'][1]['frame'];
+        $type2 = $this->instructions[$this->instructionPointer]['arguments'][1]['type'];
+        $value2 = ($type2 === 'var') ? $this->{$frame2}[$arg_name2] : $this->instructions[$this->instructionPointer]['arguments'][1]['value'];
+        if ($type2 === 'var') {
+            $value2 = $this->{$frame2}[$arg_name2];
+          
+        } else {
+            $value2 = $this->instructions[$this->instructionPointer]['arguments'][1]['value'];
+        }
+        if ($value2 === 'nil') {
+            $result = 'nil';
+        } elseif (is_bool($value2)) {
+            $result = 'bool';
+        } elseif (is_int($value2)) {
+            $result = 'int';
+        } elseif (is_string($value2)) {
+            $result = 'string';
+        } else {
+            if ($value2 === NULL) {
+                $result = '';
+            } else {
+                throw new \Exception("Wrong type of operand", Errors::WRONG_OPERAND_TYPE);
+            }
             
-        } elseif (is_null($value)) {
-            return 1;
         }
-        
-        else {
-            if (is_string($value)) {
-            return 0;
+        if (!array_key_exists($arg_name1, $this->{$frame})) {
+            throw new \Exception("Variable $arg_name1 does not exist in frame $frame");
         }
-    }
+        $this->{$frame}[$arg_name1] = $result;
+      
+      
     }
 
     public function convertString($value) {
@@ -1098,16 +1160,5 @@ class Program{
         }
         return $value;
     }
-    
-   private function areValuesComparable($value1, $value2) {
-        $convertedValue1 = $this->convertString($value1);
-        $convertedValue2 = $this->convertString($value2);
-    
-        return gettype($convertedValue1) === gettype($convertedValue2);
-    }
-    
-
-
-
 
 }
