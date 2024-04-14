@@ -37,7 +37,7 @@ class XmlParser {
      * Parses the given DOMDocument to extract program instructions.
      * @param \DOMDocument $domDocument The XML document to parse.
      * @return array<int, array{
-     *     order: int,
+     *     order: string,
      *     opcode: string,
      *     arguments: array<int, array{
      *         type: string,
@@ -189,36 +189,47 @@ class XmlParser {
         return $parsedInstructions;
     }
 
-    public static function stringEscape($string) {
+    public static function stringEscape(string $string): string {
         $pattern = '/\\\\(\d{3})/';
         $callback = function ($matches) {
             return chr($matches[1]);
         };
         return preg_replace_callback($pattern, $callback, $string);
     }
-    private static function sortInstructionsByOrder($a, $b) {
+    /**
+     * @param array<string,mixed> $a
+    * @param array<string,mixed> $b
+     */
+    private static function sortInstructionsByOrder(array $a, array $b): int{
         return $a['order'] - $b['order'];
     }
 
-    private static function convertBasedOnType($type, $value) {
-        switch ($type) {
-            case 'int':
-                return intval($value); 
-            case 'bool':
-                $lowerValue = strtolower($value);
-                if ($lowerValue === 'true') {
-                    return true; 
-                } elseif ($lowerValue === 'false') {
-                    return false; 
-                }else {
-                    throw new \Exception('Invalid bool value', Errors::UNEXPECTED_XML_STRUCTURE);
-                }
-            case 'string':
-                return self::stringEscape($value); 
-            default:
-                return $value; 
-        }
+   /**
+ * @param string $type
+ * @param mixed $value
+ * @return mixed
+ * @throws \Exception
+ */
+private static function convertBasedOnType(string $type, $value) {
+    switch ($type) {
+        case 'int':
+            return intval($value); 
+        case 'bool':
+            $lowerValue = strtolower($value);
+            if ($lowerValue === 'true') {
+                return true; 
+            } elseif ($lowerValue === 'false') {
+                return false; 
+            } else {
+                throw new \Exception('Invalid bool value', Errors::UNEXPECTED_XML_STRUCTURE);
+            }
+        case 'string':
+            return self::stringEscape($value); 
+        default:
+            return $value; 
     }
+}
+
 
 
 
@@ -228,6 +239,9 @@ class XmlParser {
 }
 
 class Opcodes{
+    /**
+     * @var array<string>
+     */
    public $opcode = [
     "MOVE","CREATEFRAME","PUSHFRAME","POPFRAME",
     "DEFVAR","CALL","RETURN","PUSHS","POPS","ADD","SUB","MUL","IDIV","LT","GT","EQ","AND","OR",
@@ -238,6 +252,9 @@ class Opcodes{
 
 }
 class Arguments_length{
+    /**
+     * @var array<string, int>
+     */
     public $args_length = [
         "MOVE" => 2,  "CREATEFRAME" => 0,  "PUSHFRAME" => 0,   "POPFRAME" => 0,   "DEFVAR" => 1,  "CALL" => 1,
         "RETURN" => 0,    "PUSHS" => 1,    "POPS" => 1,  "ADD" => 3, "SUB" => 3,    "MUL" => 3,
@@ -280,15 +297,21 @@ class Errors {
 
 
 interface Command {
+    /**
+     * @return mixed
+     */
     public function execute();
 }
 
 class DefVarCommand implements Command {
+    /**
+     * @var Program
+     */
     private $program;
-    private $varName;
-    private $frame;
+    private string $varName;
+    private string $frame;
 
-    public function __construct($program, $varName, $frame) {
+    public function __construct(Program $program, string $varName, string $frame) {
         $this->program = $program;
         $this->varName = $varName;
         $this->frame = $frame;
@@ -311,10 +334,14 @@ class DefVarCommand implements Command {
 }
 
 class ArithmeticCommand implements Command {
+     /**
+     * @var Program
+     */
+    
     private $program;
-    private $instruction;
+    private mixed $instruction;
 
-    public function __construct($program, $instruction) {
+    public function __construct(Program $program, mixed $instruction) {
         $this->program = $program;
         $this->instruction = $instruction;
     }
@@ -345,19 +372,22 @@ class ArithmeticCommand implements Command {
         }
 
         // Execute arithmetic operation
-        $this->program->_arithmetic($name1, $name2, $name3, $opcode);
+        $this->program->_arithmetic();
     }
 }
 
 class StringOperationCommand implements Command {
+     /**
+     * @var Program
+     */
     private $program;
-    private $instruction;
-    private $additionalData;
+    private mixed $instruction;
+  
 
-    public function __construct($program, $instruction, $additionalData = []) {
+    public function __construct(Program $program, mixed $instruction, ) {
         $this->program = $program;
         $this->instruction = $instruction;
-        $this->additionalData = $additionalData;
+       
     }
 
     public function execute() {
@@ -390,18 +420,21 @@ class StringOperationCommand implements Command {
 }
 
 class LogicCommand implements Command {
+     /**
+     * @var Program
+     */
     private $program;
-    private $name1;
-    private $name2;
-    private $name3;
-    private $frame1;
-    private $frame2;
-    private $frame3;
-    private $type2;
-    private $type3;
-    private $opcode;
+    private string $name1;
+    private string $name2;
+    private ?string $name3;
+    private ?string $frame1;
+    private ?string $frame2;
+    private ?string $frame3;
+    private ?string $type2;
+    private ?string $type3;
+    private string $opcode;
 
-    public function __construct($program, $instruction) {
+    public function __construct(Program $program, mixed $instruction) {
         $this->program = $program;
         $this->opcode = $instruction['opcode'];
         $this->name1 = $instruction['arguments'][0]['name'];
@@ -444,16 +477,19 @@ class LogicCommand implements Command {
 
 
 class ChangeVarCommand implements Command {
+     /**
+     * @var Program
+     */
     private $program;
-    private $arg1Value;
-    private $frame;
-    private $arg2Value;
-    private $arg2Name;
-    private $type1;
-    private $type2;
-    private $frame2;
+    private ?string $arg1Value;
+    private ?string $frame;
+    private mixed $arg2Value;
+    private string $arg2Name;
+    private string $type1;
+    private string $type2;
+    private string $frame2;
 
-    public function __construct($program, $instruction) {
+    public function __construct(Program $program, mixed $instruction) {
         $this->program = $program;
         $this->arg1Value = $instruction['arguments'][0]['name'];
         $this->frame = $instruction['arguments'][0]['frame'];
@@ -493,13 +529,16 @@ class ChangeVarCommand implements Command {
 }
 
 class WriteCommand implements Command {
+     /**
+     * @var Program
+     */
     private $program;
-    private $varName;
-    private $frame;
-    private $type;
-    private $value;
+    private string $varName;
+    private string $frame;
+    private string $type;
+    private mixed $value;
 
-    public function __construct($program, $instruction) {
+    public function __construct(Program $program, mixed $instruction) {
         $this->program = $program;
         $this->varName = $instruction['arguments'][0]['name'];
         $this->frame = $instruction['arguments'][0]['frame'];
@@ -523,7 +562,7 @@ class WriteCommand implements Command {
         }
     }
 
-    private function printValue($value) {
+    private function printValue(mixed $value): void {
         switch (gettype($value)) {
             case "boolean":
                 echo $value ? "true" : "false";
@@ -542,13 +581,16 @@ class WriteCommand implements Command {
 }
 
 class ReadCommand implements Command {
+     /**
+     * @var Program
+     */
     private $program;
-    private $varName;
-    private $frame;
-    private $type;
-    private $inputHandler;
+    private string $varName;
+    private string $frame;
+    private string $type;
+    private mixed $inputHandler;
 
-    public function __construct($program, $instruction, $inputHandler) {
+    public function __construct(Program $program, mixed $instruction, mixed $inputHandler) {
         $this->program = $program;
         $this->varName = $instruction['arguments'][0]['name'];
         $this->frame = $instruction['arguments'][0]['frame'];
@@ -579,12 +621,15 @@ class ReadCommand implements Command {
 }
 
 class DPrintCommand implements Command {
+     /**
+     * @var Program
+     */
     private $program;
-    private $varName;
-    private $frame;
-    private $value;
-    private $type;
-    public function __construct($program, $instruction) {
+    private string $varName;
+    private string $frame;
+    private mixed $value;
+    private string $type;
+    public function __construct(Program $program, mixed $instruction) {
         $this->program = $program;
         $this->varName = $instruction['arguments'][0]['name'];
         $this->frame = $instruction['arguments'][0]['frame'];
@@ -612,10 +657,13 @@ class DPrintCommand implements Command {
 }
 
 class JumpCommand implements Command {
+     /**
+     * @var Program
+     */
     private $program;
-    private $label;
+    private string $label;
 
-    public function __construct($program, $label) {
+    public function __construct(Program $program, string $label) {
         $this->program = $program;
         $this->label = $label;
     }
@@ -631,19 +679,22 @@ class JumpCommand implements Command {
 }
 
 class ConditionalJumpCommand implements Command {
+     /**
+     * @var Program
+     */
     private $program;
-    private $name1;
-    private $name2;
-    private $name3;
-    private $frame1;
-    private $frame2;
-    private $frame3;
-    private $type1;
-    private $type2;
-    private $type3;
-    private $opcode;
+    private string $name1;
+    private string $name2;
+    private string $name3;
+    private string $frame1;
+    private string $frame2;
+    private string $frame3;
+    private string $type1;
+    private string $type2;
+    private string $type3;
+    private string $opcode;
 
-    public function __construct($program, $instruction) {
+    public function __construct(Program $program, mixed $instruction) {
         $this->program = $program;
         $this->opcode = $instruction['opcode'];
         $this->name1 = $instruction['arguments'][0]['name'];
@@ -690,7 +741,8 @@ class ConditionalJumpCommand implements Command {
            
         }
     }
-    private function jumpToLabel() {
+    private function jumpToLabel(): void
+     {
         $label = $this->program->instructions[$this->program->instructionPointer]['arguments'][0]['value'];
         $labelIndex = $this->program->findLabelIndex($label);
         if ($labelIndex === -1) {
@@ -702,14 +754,17 @@ class ConditionalJumpCommand implements Command {
 
 
 class TypeCommand implements Command {
+     /**
+     * @var Program
+     */
     private $program;
-    private $varName1;
-    private $varName2;
-    private $frame1;
-    private $frame2;
-    private $type2;
+    private string $varName1;
+    private string $varName2;
+    private string $frame1;
+    private string $frame2;
+    private string $type2;
 
-    public function __construct($program, $instruction) {
+    public function __construct(Program $program, mixed $instruction) {
         $this->program = $program;
         $this->varName1 = $instruction['arguments'][0]['name'];
         $this->frame1 = $instruction['arguments'][0]['frame'];
@@ -728,9 +783,12 @@ class TypeCommand implements Command {
 }
 
 class BreakCommand implements Command {
+     /**
+     * @var Program
+     */
     private $program;
 
-    public function __construct($program) {
+    public function __construct(Program $program) {
         $this->program = $program;
     }
 
@@ -750,9 +808,12 @@ class BreakCommand implements Command {
 }
 
 class CreateFrameCommand implements Command {
+     /**
+     * @var Program
+     */
     private $program;
 
-    public function __construct($program) {
+    public function __construct(Program $program) {
         $this->program = $program;
     }
 
@@ -766,9 +827,12 @@ class CreateFrameCommand implements Command {
 
 
 class PushFrameCommand implements Command {
+     /**
+     * @var Program
+     */
     private $program;
 
-    public function __construct($program) {
+    public function __construct(Program $program) {
         $this->program = $program;
     }
 
@@ -788,9 +852,12 @@ class PushFrameCommand implements Command {
 }
 
 class PopFrameCommand implements Command {
+     /**
+     * @var Program
+     */
     private $program;
 
-    public function __construct($program) {
+    public function __construct(Program $program) {
         $this->program = $program;
     }
 
@@ -806,10 +873,13 @@ class PopFrameCommand implements Command {
 
 
 class CallCommand implements Command {
+     /**
+     * @var Program
+     */
     private $program;
-    private $label;
+    private string $label;
 
-    public function __construct($program, $label) {
+    public function __construct(Program $program, string $label) {
         $this->program = $program;
         $this->label = $label;
     }
@@ -826,9 +896,12 @@ class CallCommand implements Command {
 
 
 class ReturnCommand implements Command {
+     /**
+     * @var Program
+     */
     private $program;
 
-    public function __construct($program) {
+    public function __construct(Program $program) {
         $this->program = $program;
     }
 
@@ -841,9 +914,9 @@ class ReturnCommand implements Command {
 }
 
 class ExitCommand implements Command {
-    private $exitCode;
+    private mixed $exitCode;
 
-    public function __construct($exitCode) {
+    public function __construct(mixed $exitCode) {
         $this->exitCode = $exitCode;
     }
 
@@ -859,13 +932,16 @@ class ExitCommand implements Command {
 }
 
 class PushCommand implements Command {
+     /**
+     * @var Program
+     */
     private $program;
-    private $name;
-    private $frame;
-    private $type;
-    private $value;
+    private string $name;
+    private string $frame;
+    private string $type;
+    private mixed $value;
 
-    public function __construct($program, $instruction) {
+    public function __construct(Program $program, mixed $instruction) {
         $this->program = $program;
         $this->name = $instruction['arguments'][0]['name'];
         $this->frame = $instruction['arguments'][0]['frame'];
@@ -885,13 +961,16 @@ class PushCommand implements Command {
 }
 
 class PopCommand implements Command {
+     /**
+     * @var Program
+     */
     private $program;
-    private $name;
-    private $frame;
-    private $type;
-    private $value;
+    private string $name;
+    private string $frame;
+    private string $type;
+    private mixed $value;
 
-    public function __construct($program, $instruction) {
+    public function __construct(Program $program, mixed $instruction) {
         $this->program = $program;
         $this->name = $instruction['arguments'][0]['name'];
         $this->frame = $instruction['arguments'][0]['frame'];
@@ -912,13 +991,13 @@ class PopCommand implements Command {
 
 
 class CommandFactory {
-    private $inputHandler;
+    private mixed $inputHandler;
 
-    public function __construct($inputHandler) {
+    public function __construct(mixed $inputHandler) {
         $this->inputHandler = $inputHandler;
     }
     
-    public function createCommand($instruction, $program) {
+    public function createCommand(mixed $instruction, Program $program): ?Command {
         switch ($instruction['opcode']) {
             case 'DEFVAR':
                 return new DefVarCommand($program, $instruction['arguments'][0]['name'], $instruction['arguments'][0]['frame']);
@@ -989,21 +1068,21 @@ class CommandFactory {
 
 
 class Program{
-    public $instructions = [];  
-    public $GF = [];
-    public $LF = [];
-    public $TF_activator = 1;
-    public $TF = [];
-    public $dataStack = [];
-    public $callStack = [];
-    public $instructionPointer = 0;
-    public $instructionCount = 0;
-    public $labels = [];
-    public $variables = [];
-    public $input;
-    public $output;
-    public $commandFactory;
-    public function __construct($instructions, $input, $output, $commandFactory){
+    public mixed $instructions = [];  
+    public mixed $GF = [];
+    public mixed $LF = [];
+    public int $TF_activator = 1;
+    public mixed $TF = [];
+    public mixed $dataStack = [];
+    public mixed $callStack = [];
+    public int $instructionPointer = 0;
+    public int $instructionCount = 0;
+    public mixed $labels = [];
+    public mixed $variables = [];
+    public mixed $input;
+    public mixed $output;
+    public mixed $commandFactory;
+    public function __construct(mixed $instructions, mixed $input, mixed $output, mixed $commandFactory){
         $this->instructions = $instructions;
         $this->input = $input;
         $this->output = $output;  
@@ -1012,7 +1091,7 @@ class Program{
      
     }
 
-    public function run(){
+    public function run(): void{
        
        $this->_getLabels($this->instructions);
        $this->instructionPointer = 0;
@@ -1030,7 +1109,8 @@ class Program{
 
 
       
-    public function _getLabels($instructions) {
+    public function _getLabels(mixed $instructions): void 
+    {
         foreach ($instructions as $instruction) {
             if ($instruction['opcode'] === 'LABEL') {
                 $label = $instruction['arguments'][0]['value']; // get the label name
@@ -1044,7 +1124,7 @@ class Program{
     }
     
   
-    public function _check($varName, $frame){
+    public function _check(string $varName, string $frame): void{
         
     
         if ($frame === 'GF') {
@@ -1075,7 +1155,7 @@ class Program{
 
 
 
-    public function _arithmetic(){
+    public function _arithmetic(): void {
         $arg_name1 = $this->instructions[$this->instructionPointer]['arguments'][0]['name'];
         $arg_name2 = $this->instructions[$this->instructionPointer]['arguments'][1]['name'];
         $arg_name3 = $this->instructions[$this->instructionPointer]['arguments'][2]['name'];
@@ -1094,6 +1174,7 @@ class Program{
         
         $value2 = ($type2 === 'var') ? $this->{$frame2}[$arg_name2] : $this->instructions[$this->instructionPointer]['arguments'][1]['value'];
         $value3 = ($type3 === 'var') ? $this->{$frame3}[$arg_name3] : $this->instructions[$this->instructionPointer]['arguments'][2]['value'];
+        $result = 0;
 
         
         if ( $opcodeArg === 'ADD' || $opcodeArg === 'MUL' || $opcodeArg === 'SUB' || $opcodeArg === 'IDIV'){
@@ -1148,7 +1229,7 @@ class Program{
         throw new \Exception("Variable $arg_name1 does not exist in frame $frame");
     }
     $this->{$frame}[$arg_name1] = $result;
-        }
+    }
 
         if ( $opcodeArg === 'ADD'){
         $result = $value2 + $value3;
@@ -1160,7 +1241,7 @@ class Program{
             if ($value3 === 0) {
                 throw new \Exception("Division by zero", Errors::WRONG_OPERANT_VALUE);
             }else{
-            $result = $value2 / $value3;
+                $result = intdiv($value2, $value3);
             }
         }
     
@@ -1175,24 +1256,24 @@ class Program{
         
     }
 
-    public function findLabelIndex($labelName) {
+    public function findLabelIndex(string $labelName): int {
         foreach ($this->instructions as $index => $instruction) {
             if ($instruction['opcode'] === 'LABEL' && $instruction['arguments'][0]['value'] === $labelName) {
-                //echo "Label: " . $labelName . "\n";
-                //echo "Index: " . $index . "\n";
+                
                 return $index;
             }
            
         }
-        return -1; // Если метка не найдена
+        return -1; 
     }
 
-    public function _strings(){
+    public function _strings(): void{
         $arg_name1 = $this->instructions[$this->instructionPointer]['arguments'][0]['name'];
         $arg_name2 = $this->instructions[$this->instructionPointer]['arguments'][1]['name'];
         $value1 = $this->instructions[$this->instructionPointer]['arguments'][0]['value'];
         $frame = $this->instructions[$this->instructionPointer]['arguments'][0]['frame'];
         $frame2 = $this->instructions[$this->instructionPointer]['arguments'][1]['frame'];
+        $value3 = null;
        
 
         if(isset ($this->instructions[$this->instructionPointer]['arguments'][2])){
@@ -1210,8 +1291,7 @@ class Program{
         $type2 = $this->instructions[$this->instructionPointer]['arguments'][1]['type'];
         $value2 = $this->instructions[$this->instructionPointer]['arguments'][1]['value'];
         $value2 = ($type2 === 'var') ? $this->{$frame2}[$arg_name2] : $this->instructions[$this->instructionPointer]['arguments'][1]['value'];
-       //var_dump($value2);
-       //var_dump($value3);
+        $result = null;
         if ($opcodeArg === 'CONCAT') {
             if ($this->checkVariableString($value2) && $this->checkVariableString($value3)) {
                 $result = $value2 . $value3;
@@ -1275,7 +1355,7 @@ class Program{
         
     }
 
-    public function _logic(){
+    public function _logic(): void{
         $arg_name1 = $this->instructions[$this->instructionPointer]['arguments'][0]['name'];
         $arg_name2 = $this->instructions[$this->instructionPointer]['arguments'][1]['name'];   
         $frame = $this->instructions[$this->instructionPointer]['arguments'][0]['frame'];
@@ -1345,7 +1425,7 @@ class Program{
     }
 }
 
-    public function checkVariableString($value) {
+    public function checkVariableString(mixed $value): bool{
         if ($value === 'nil') {
            return false;
             
@@ -1359,15 +1439,17 @@ class Program{
             if (is_string($value)) {
             return true;
         }
+        }
+        return false;
     }
-    }
-    public function _type(){
+    public function _type(): void{
         $arg_name1 = $this->instructions[$this->instructionPointer]['arguments'][0]['name'];
         $arg_name2 = $this->instructions[$this->instructionPointer]['arguments'][1]['name'];
         $frame = $this->instructions[$this->instructionPointer]['arguments'][0]['frame'];
         $frame2 = $this->instructions[$this->instructionPointer]['arguments'][1]['frame'];
         $type2 = $this->instructions[$this->instructionPointer]['arguments'][1]['type'];
         $value2 = ($type2 === 'var') ? $this->{$frame2}[$arg_name2] : $this->instructions[$this->instructionPointer]['arguments'][1]['value'];
+        
         if ($type2 === 'var') {
             $value2 = $this->{$frame2}[$arg_name2];
           
@@ -1398,7 +1480,7 @@ class Program{
       
     }
 
-    public function convertString($value) {
+    public function convertString(mixed $value): mixed {
         if (is_numeric($value)) {
             return $value + 0;
         }
