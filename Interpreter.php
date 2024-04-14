@@ -14,7 +14,7 @@ class Interpreter extends AbstractInterpreter
        
         try {
             
-            $commandFactory = new CommandFactory($this->input);
+            $commandFactory = new CommandFactory($this->input, $this->stdout, $this->stderr);
             $domDocument = $this->source->getDOMDocument(); 
             $parsedInstructions = XmlParser::parse($domDocument);
             $interpret = new Program($parsedInstructions, $this->input, $this->stdout, $commandFactory);
@@ -77,7 +77,7 @@ class XmlParser {
 
         foreach ($instructions as $instruction) {
             $order = $instruction->getAttribute('order');
-            //echo $order;
+            
             if (!is_numeric($order)) {
                 throw new \Exception('Order must be a number', Errors::UNEXPECTED_XML_STRUCTURE);
             }elseif ($order < 1) {
@@ -101,7 +101,7 @@ class XmlParser {
             $check_order = [];
 
             foreach ($instruction->childNodes as $child) {
-                if ($child->nodeType === XML_ELEMENT_NODE) {
+                if ($child instanceof \DOMElement) {
                     $argOrder = $child->nodeName;
                     
                     if (!in_array($argOrder, ['arg1', 'arg2', 'arg3'])) {
@@ -113,7 +113,7 @@ class XmlParser {
                     $argType = $child->getAttribute('type');
                     
                     $argValue = trim($child->textContent);
-                    //echo $argValue;
+                    
                     if (empty($argType)) {
                         throw new \Exception('Argument type must not be empty', Errors::UNEXPECTED_XML_STRUCTURE);
                     }
@@ -537,13 +537,15 @@ class WriteCommand implements Command {
     private string $frame;
     private string $type;
     private mixed $value;
+    private mixed $outputHandler;
 
-    public function __construct(Program $program, mixed $instruction) {
+    public function __construct(Program $program, mixed $instruction, mixed $outputHandler) {
         $this->program = $program;
         $this->varName = $instruction['arguments'][0]['name'];
         $this->frame = $instruction['arguments'][0]['frame'];
         $this->type = $instruction['arguments'][0]['type'];
         $this->value = $instruction['arguments'][0]['value'];
+        $this->outputHandler = $outputHandler;
     }
 
     public function execute() {
@@ -565,14 +567,15 @@ class WriteCommand implements Command {
     private function printValue(mixed $value): void {
         switch (gettype($value)) {
             case "boolean":
-                echo $value ? "true" : "false";
+               
+                $this->outputHandler->writeString($value ? "true" : "false");
                 break;
             case "integer":
             case "string":
-                echo $value;
+                $this->outputHandler->writeString($value);
                 break;
             case "NULL":
-                echo "nil";
+                $this->outputHandler->writeString("nil");
                 break;
             default:
                 throw new \Exception("Unsupported type for WRITE operation", Errors::WRONG_OPERAND_TYPE);
@@ -787,22 +790,24 @@ class BreakCommand implements Command {
      * @var Program
      */
     private $program;
+    private mixed $stderrHandler;
 
-    public function __construct(Program $program) {
+    public function __construct(Program $program, mixed $stderrHandler) {
         $this->program = $program;
+        $this->stderrHandler = $stderrHandler;
     }
 
     public function execute() {
-        echo "Instruction pointer: " . $this->program->instructionPointer . "\n";
-        echo "Global frame (GF): \n";
+        $this->stderrHandler->writeString("Instruction pointer: " . $this->program->instructionPointer . "\n");
+        $this->stderrHandler->writeString("Global frame (GF): \n");
         var_dump($this->program->GF);
-        echo "Local frame (LF): \n";
+        $this->stderrHandler->writeString("Local frame (LF): \n");
         var_dump($this->program->LF);
-        echo "Temporary frame (TF): \n";
+        $this->stderrHandler->writeString("Temporary frame (TF): \n");
         var_dump($this->program->TF);
-        echo "Data stack: \n";
+        $this->stderrHandler->writeString("Data stack: \n");
         var_dump($this->program->dataStack);
-        echo "Call stack: \n";
+        $this->stderrHandler->writeString("Call stack: \n");
         var_dump($this->program->callStack);
     }
 }
@@ -992,9 +997,13 @@ class PopCommand implements Command {
 
 class CommandFactory {
     private mixed $inputHandler;
+    private mixed $outputHandler;
+    private mixed $stderrHandler;
 
-    public function __construct(mixed $inputHandler) {
+    public function __construct(mixed $inputHandler, mixed $outputHandler, mixed $stderrHandler) {
         $this->inputHandler = $inputHandler;
+        $this->outputHandler = $outputHandler;
+        $this->stderrHandler = $stderrHandler;
     }
     
     public function createCommand(mixed $instruction, Program $program): ?Command {
@@ -1023,7 +1032,7 @@ class CommandFactory {
             case 'NOT':
                 return new LogicCommand($program, $instruction);
             case 'WRITE':
-                return new WriteCommand($program, $instruction);
+                return new WriteCommand($program, $instruction, $this->outputHandler);
             case 'READ':
                 return new ReadCommand($program, $instruction, $this->inputHandler);
             case 'DPRINT':
@@ -1039,7 +1048,7 @@ class CommandFactory {
             case 'TYPE':
                 return new TypeCommand($program, $instruction);
             case 'BREAK':
-                return new BreakCommand($program);
+                return new BreakCommand($program, $this->stderrHandler);
             case 'CREATEFRAME':
                 return new CreateFrameCommand($program);
             case 'PUSHFRAME':
