@@ -7,15 +7,17 @@ use IPP\Core\Exception\NotImplementedException;
 
 class Interpreter extends AbstractInterpreter
 {
+    
+
     public function execute(): int
     {
        
         try {
             
-            
+            $commandFactory = new CommandFactory($this->input);
             $domDocument = $this->source->getDOMDocument(); 
             $parsedInstructions = XmlParser::parse($domDocument);
-            $interpret = new Program($parsedInstructions, $this->input, $this->stdout);
+            $interpret = new Program($parsedInstructions, $this->input, $this->stdout, $commandFactory);
             $interpret->run();
            
             return 0; // 
@@ -31,6 +33,21 @@ class Interpreter extends AbstractInterpreter
     
 }
 class XmlParser {
+    /**
+     * Parses the given DOMDocument to extract program instructions.
+     * @param \DOMDocument $domDocument The XML document to parse.
+     * @return array<int, array{
+     *     order: int,
+     *     opcode: string,
+     *     arguments: array<int, array{
+     *         type: string,
+     *         value: string,
+     *         frame: string|null,
+     *         name: string|null
+     *     }>
+     * }> Returns an array of parsed instructions.
+     * @throws \Exception If the XML structure is invalid or unexpected.
+     */
     public static function parse(\DOMDocument $domDocument): array
     {
         $root = $domDocument->documentElement;
@@ -47,9 +64,13 @@ class XmlParser {
         $parsedInstructions = [];
         $check_order2 = [];
         $varFrame = '';
+        $varName = '';
         foreach ($root->childNodes as $node) {
-            if ($node->nodeType === XML_ELEMENT_NODE && $node->tagName !== 'instruction') {
-                throw new \Exception('Invalid instruction name.', Errors::UNEXPECTED_XML_STRUCTURE);
+            /** @var \DOMElement $node */
+            if ($node->nodeType === XML_ELEMENT_NODE) {
+                if ($node->tagName !== 'instruction') {
+                    throw new \Exception('Invalid instruction name.', Errors::UNEXPECTED_XML_STRUCTURE);
+                }
             }
         }
 
@@ -118,9 +139,7 @@ class XmlParser {
                         }
                     } elseif ($argType === 'bool') {
                         $boolValue = boolval($argValue); // Преобразование строки в булево значение
-                        if ($boolValue === null) {
-                            throw new \Exception('Invalid bool value', Errors::UNEXPECTED_XML_STRUCTURE);
-                        }
+  
                     } elseif ($argType === 'nil') {
                         if ($argValue !== 'nil') {
                             throw new \Exception('Invalid nil value', Errors::UNEXPECTED_XML_STRUCTURE);
@@ -184,20 +203,20 @@ class XmlParser {
     private static function convertBasedOnType($type, $value) {
         switch ($type) {
             case 'int':
-                return intval($value); // Преобразование в целое число
+                return intval($value); 
             case 'bool':
                 $lowerValue = strtolower($value);
                 if ($lowerValue === 'true') {
-                    return true; // Явное преобразование строки 'true' в булево true
+                    return true; 
                 } elseif ($lowerValue === 'false') {
-                    return false; // Явное преобразование строки 'false' в булево false
+                    return false; 
                 }else {
                     throw new \Exception('Invalid bool value', Errors::UNEXPECTED_XML_STRUCTURE);
                 }
             case 'string':
-                return self::stringEscape($value); // Применение экранирования для строки
+                return self::stringEscape($value); 
             default:
-                return $value; // Если тип не известен, возвращаем значение без изменений
+                return $value; 
         }
     }
 
@@ -257,6 +276,718 @@ class Errors {
 
 
 
+
+
+
+interface Command {
+    public function execute();
+}
+
+class DefVarCommand implements Command {
+    private $program;
+    private $varName;
+    private $frame;
+
+    public function __construct($program, $varName, $frame) {
+        $this->program = $program;
+        $this->varName = $varName;
+        $this->frame = $frame;
+    }
+
+    public function execute() {
+        $frameRef = &$this->program->{$this->frame};  // Get reference to the frame array
+
+        if (array_key_exists($this->varName, $frameRef)) {
+            throw new \Exception('Variable already exists in frame', Errors::SEMANTIC_CHECKS);
+        }
+
+        if ($this->frame === 'TF' && $this->program->TF_activator === 1) {
+            throw new \Exception('Temporary Frame not activated', Errors::NONEXISTENT_FRAME);
+        }
+
+        $frameRef[$this->varName] = null;  // Define variable with initial value null
+        //var_dump($frameRef);
+    }
+}
+
+class ArithmeticCommand implements Command {
+    private $program;
+    private $instruction;
+
+    public function __construct($program, $instruction) {
+        $this->program = $program;
+        $this->instruction = $instruction;
+    }
+
+    public function execute() {
+        $opcode = $this->instruction['opcode'];
+        $args = $this->instruction['arguments'];
+
+        $name1 = $args[0]['name'];
+        $name2 = $args[1]['name'];
+        $name3 = $args[2]['name'];
+
+        $frame1 = $args[0]['frame'];
+        $frame2 = $args[1]['frame'];
+        $frame3 = $args[2]['frame'];
+
+        $type1 = $args[0]['type'];
+        $type2 = $args[1]['type'];
+        $type3 = $args[2]['type'];
+
+        // Perform checks on the variables
+        $this->program->_check($name1, $frame1);
+        if ($type2 === 'var') {
+            $this->program->_check($name2, $frame2);
+        }
+        if ($type3 === 'var') {
+            $this->program->_check($name3, $frame3);
+        }
+
+        // Execute arithmetic operation
+        $this->program->_arithmetic($name1, $name2, $name3, $opcode);
+    }
+}
+
+class StringOperationCommand implements Command {
+    private $program;
+    private $instruction;
+    private $additionalData;
+
+    public function __construct($program, $instruction, $additionalData = []) {
+        $this->program = $program;
+        $this->instruction = $instruction;
+        $this->additionalData = $additionalData;
+    }
+
+    public function execute() {
+        // Extract information from instruction
+        $name1 = $this->instruction['arguments'][0]['name'];
+        $name2 = $this->instruction['arguments'][1]['name'];
+        $frame1 = $this->instruction['arguments'][0]['frame'];
+        $frame2 = $this->instruction['arguments'][1]['frame'];
+        //$type1 = $this->instruction['arguments'][0]['type'];
+        $type2 = $this->instruction['arguments'][1]['type'];
+
+
+        
+        if (isset($this->instruction['arguments'][2])) {
+            $name3 = $this->instruction['arguments'][2]['name'];
+            $frame3 = $this->instruction['arguments'][2]['frame'];
+            $type3 = $this->instruction['arguments'][2]['type'];
+            if ($type3 === 'var') {
+                $this->program->_check($name3, $frame3);
+            }
+        }
+        $this->program->_check($name1, $frame1);
+        if ($type2 === 'var') {
+            $this->program->_check($name2, $frame2);
+        } 
+
+        // Call the _strings method with extracted data
+        $this->program->_strings();
+    }
+}
+
+class LogicCommand implements Command {
+    private $program;
+    private $name1;
+    private $name2;
+    private $name3;
+    private $frame1;
+    private $frame2;
+    private $frame3;
+    private $type2;
+    private $type3;
+    private $opcode;
+
+    public function __construct($program, $instruction) {
+        $this->program = $program;
+        $this->opcode = $instruction['opcode'];
+        $this->name1 = $instruction['arguments'][0]['name'];
+        $this->frame1 = $instruction['arguments'][0]['frame'];
+
+        $this->name2 = $instruction['arguments'][1]['name'];
+        $this->frame2 = $instruction['arguments'][1]['frame'];
+        $this->type2 = $instruction['arguments'][1]['type'];
+
+        if ($this->opcode !== 'NOT') {
+            $this->name3 = $instruction['arguments'][2]['name'];
+            $this->frame3 = $instruction['arguments'][2]['frame'];
+            $this->type3 = $instruction['arguments'][2]['type'];
+        } else {
+            $this->name3 = null;
+            $this->frame3 = null;
+            $this->type3 = null;
+        }
+
+    }
+
+    public function execute() {
+        // Check existence of variables
+        $this->program->_check($this->name1, $this->frame1);
+        if($this->type2 === 'var'){
+            $this->program->_check($this->name2, $this->frame2);
+        }
+        if ($this->type3 === 'var') {
+            $this->program->_check($this->name3, $this->frame3);
+        }
+
+        
+        $this->program->_logic();
+    }
+}
+
+
+
+
+
+
+class ChangeVarCommand implements Command {
+    private $program;
+    private $arg1Value;
+    private $frame;
+    private $arg2Value;
+    private $arg2Name;
+    private $type1;
+    private $type2;
+    private $frame2;
+
+    public function __construct($program, $instruction) {
+        $this->program = $program;
+        $this->arg1Value = $instruction['arguments'][0]['name'];
+        $this->frame = $instruction['arguments'][0]['frame'];
+        $this->arg2Value = $instruction['arguments'][1]['value'];
+        $this->arg2Name = $instruction['arguments'][1]['name'];
+        $this->type1 = $instruction['arguments'][0]['type'];
+        $this->type2 = $instruction['arguments'][1]['type'];
+        $this->frame2 = $instruction['arguments'][1]['frame'];
+     
+        
+    }
+
+    public function execute() {
+      
+        if ($this->type1 === 'var') {
+            $this->program->_check($this->arg1Value, $this->frame);
+        }
+        if ($this->type2 === 'var') {
+            $this->program->_check($this->arg2Name, $this->frame2);
+            $this->arg2Value = $this->program->{$this->frame2}[$this->arg2Name];
+        }
+        
+        switch ($this->frame) {
+            case 'GF':
+                $this->program->GF[$this->arg1Value] = $this->arg2Value;
+                //var_dump($this->program->GF);
+                break;
+            case 'LF':
+                $this->program->LF[$this->arg1Value] = $this->arg2Value;
+                break;
+            case 'TF':
+                $this->program->TF[$this->arg1Value] = $this->arg2Value;
+                break;
+        }
+    
+    }
+}
+
+class WriteCommand implements Command {
+    private $program;
+    private $varName;
+    private $frame;
+    private $type;
+    private $value;
+
+    public function __construct($program, $instruction) {
+        $this->program = $program;
+        $this->varName = $instruction['arguments'][0]['name'];
+        $this->frame = $instruction['arguments'][0]['frame'];
+        $this->type = $instruction['arguments'][0]['type'];
+        $this->value = $instruction['arguments'][0]['value'];
+    }
+
+    public function execute() {
+        if ($this->type === 'var') {
+            $this->program->_check($this->varName, $this->frame);
+            $actualValue = $this->program->{$this->frame}[$this->varName];
+            
+
+            if ($actualValue === null) {
+                throw new \Exception('Missing value', Errors::MISSING_VALUE);
+            }
+
+            $this->printValue($actualValue);
+        } else {
+            $this->printValue($this->value);
+        }
+    }
+
+    private function printValue($value) {
+        switch (gettype($value)) {
+            case "boolean":
+                echo $value ? "true" : "false";
+                break;
+            case "integer":
+            case "string":
+                echo $value;
+                break;
+            case "NULL":
+                echo "nil";
+                break;
+            default:
+                throw new \Exception("Unsupported type for WRITE operation", Errors::WRONG_OPERAND_TYPE);
+        }
+    }
+}
+
+class ReadCommand implements Command {
+    private $program;
+    private $varName;
+    private $frame;
+    private $type;
+    private $inputHandler;
+
+    public function __construct($program, $instruction, $inputHandler) {
+        $this->program = $program;
+        $this->varName = $instruction['arguments'][0]['name'];
+        $this->frame = $instruction['arguments'][0]['frame'];
+        $this->type = $instruction['arguments'][1]['value']; // Assuming the type is passed directly as the second argument
+        $this->inputHandler = $inputHandler;
+    }
+
+    public function execute() {
+        $this->program->_check($this->varName, $this->frame);
+        $input = $this->inputHandler->readString();
+
+        switch ($this->type) {
+            case 'int':
+                $value = intval($input);
+                break;
+            case 'string':
+                $value = $input;
+                break;
+            case 'bool':
+                $value = strtolower($input) === 'true';
+                break;
+            default:
+                throw new \Exception('Unsupported input type', Errors::WRONG_OPERAND_TYPE);
+        }
+
+        $this->program->{$this->frame}[$this->varName] = $value;
+    }
+}
+
+class DPrintCommand implements Command {
+    private $program;
+    private $varName;
+    private $frame;
+    private $value;
+    private $type;
+    public function __construct($program, $instruction) {
+        $this->program = $program;
+        $this->varName = $instruction['arguments'][0]['name'];
+        $this->frame = $instruction['arguments'][0]['frame'];
+        $this->value = $instruction['arguments'][0]['value'];
+        $this->type = $instruction['arguments'][0]['type'];
+    }
+
+    public function execute() {
+        $this->program->_check($this->varName, $this->frame);  // Ensure variable exists
+        if ($this->type === 'var') {
+         
+        $value = $this->program->{$this->frame}[$this->varName];
+
+        if ($value === null) {
+            throw new \Exception('Missing value', Errors::MISSING_VALUE);
+        }
+
+        if ($value === 'nil') {
+            echo "nil\n";
+        } else {
+            echo $value . "\n"; // Output the value of the variable
+        }
+    }
+    }
+}
+
+class JumpCommand implements Command {
+    private $program;
+    private $label;
+
+    public function __construct($program, $label) {
+        $this->program = $program;
+        $this->label = $label;
+    }
+
+    public function execute() {
+        $labelIndex = $this->program->findLabelIndex($this->label);
+        if ($labelIndex === -1) {
+            throw new \Exception('Label does not exist', Errors::SEMANTIC_CHECKS);
+        }else{
+        $this->program->instructionPointer = $labelIndex;
+        } 
+    }
+}
+
+class ConditionalJumpCommand implements Command {
+    private $program;
+    private $name1;
+    private $name2;
+    private $name3;
+    private $frame1;
+    private $frame2;
+    private $frame3;
+    private $type1;
+    private $type2;
+    private $type3;
+    private $opcode;
+
+    public function __construct($program, $instruction) {
+        $this->program = $program;
+        $this->opcode = $instruction['opcode'];
+        $this->name1 = $instruction['arguments'][0]['name'];
+        $this->frame1 = $instruction['arguments'][0]['frame'];
+        $this->type1 = $instruction['arguments'][0]['type'];
+        $this->name2 = $instruction['arguments'][1]['name'];
+        $this->frame2 = $instruction['arguments'][1]['frame'];
+        $this->type2 = $instruction['arguments'][1]['type'];
+        $this->name3 = $instruction['arguments'][2]['name'];
+        $this->frame3 = $instruction['arguments'][2]['frame'];
+        $this->type3 = $instruction['arguments'][2]['type'];
+    }
+
+    public function execute() {
+        // Check variable existence
+        $this->program->_check($this->name1, $this->frame1);
+        if ($this->type2 === 'var') {
+            $this->program->_check($this->name2, $this->frame2);
+        }
+        if ($this->type3 === 'var') {
+            $this->program->_check($this->name3, $this->frame3);
+        }
+
+        $value2 = ($this->type2 === 'var') ? $this->program->{$this->frame2}[$this->name2] : $this->program->instructions[$this->program->instructionPointer]['arguments'][1]['value'];
+        $value3 = ($this->type3 === 'var') ? $this->program->{$this->frame3}[$this->name3] : $this->program->instructions[$this->program->instructionPointer]['arguments'][2]['value'];
+
+        // Perform conditional jump
+        if ($this->opcode === 'JUMPIFEQ') {
+            $value2 = (int)$value2;
+            $value3 = (int)$value3;
+            if($value2 === $value3){
+            $this->jumpToLabel();
+            }
+        } elseif ($this->opcode === 'JUMPIFNEQ') {
+            if(gettype($value2) === gettype($value3) || $value2 === 'nil' || $value3 === 'nil'){
+                if($value2 !== $value3){
+                    $this->jumpToLabel();
+                }
+            }
+            else{
+                throw new \Exception('Values are not comparable', Errors::WRONG_OPERAND_TYPE);
+            }
+
+           
+        }
+    }
+    private function jumpToLabel() {
+        $label = $this->program->instructions[$this->program->instructionPointer]['arguments'][0]['value'];
+        $labelIndex = $this->program->findLabelIndex($label);
+        if ($labelIndex === -1) {
+            throw new \Exception('Label does not exist', Errors::SEMANTIC_CHECKS);
+        }
+        $this->program->instructionPointer = $labelIndex;
+    }
+}
+
+
+class TypeCommand implements Command {
+    private $program;
+    private $varName1;
+    private $varName2;
+    private $frame1;
+    private $frame2;
+    private $type2;
+
+    public function __construct($program, $instruction) {
+        $this->program = $program;
+        $this->varName1 = $instruction['arguments'][0]['name'];
+        $this->frame1 = $instruction['arguments'][0]['frame'];
+        $this->varName2 = $instruction['arguments'][1]['name'];
+        $this->frame2 = $instruction['arguments'][1]['frame'];
+        $this->type2 = $instruction['arguments'][1]['type'];
+    }
+
+    public function execute() {
+        $this->program->_check($this->varName1, $this->frame1);
+        if ($this->type2 === 'var') {
+            $this->program->_check($this->varName2, $this->frame2);
+        }
+        $this->program->_type();
+    }
+}
+
+class BreakCommand implements Command {
+    private $program;
+
+    public function __construct($program) {
+        $this->program = $program;
+    }
+
+    public function execute() {
+        echo "Instruction pointer: " . $this->program->instructionPointer . "\n";
+        echo "Global frame (GF): \n";
+        var_dump($this->program->GF);
+        echo "Local frame (LF): \n";
+        var_dump($this->program->LF);
+        echo "Temporary frame (TF): \n";
+        var_dump($this->program->TF);
+        echo "Data stack: \n";
+        var_dump($this->program->dataStack);
+        echo "Call stack: \n";
+        var_dump($this->program->callStack);
+    }
+}
+
+class CreateFrameCommand implements Command {
+    private $program;
+
+    public function __construct($program) {
+        $this->program = $program;
+    }
+
+    public function execute() {
+        $this->program->TF_activator = 0;
+        $this->program->TF = []; // Initialize the temporary frame as empty
+    }
+}
+
+
+
+
+class PushFrameCommand implements Command {
+    private $program;
+
+    public function __construct($program) {
+        $this->program = $program;
+    }
+
+    public function execute() {
+        if ($this->program->TF_activator !== 0) {
+            throw new \Exception('Temporary frame is deactivated', Errors::NONEXISTENT_FRAME);
+        }
+        
+        if ($this->program->TF === null) {
+            throw new \Exception('Temporary frame is not defined', Errors::NONEXISTENT_FRAME);
+        }
+        
+        $this->program->LF = array_merge($this->program->LF, $this->program->TF);
+        $this->program->TF_activator = 1;  // Activate the frame status
+        $this->program->TF = null;         // Clear the temporary frame
+    }
+}
+
+class PopFrameCommand implements Command {
+    private $program;
+
+    public function __construct($program) {
+        $this->program = $program;
+    }
+
+    public function execute() {
+        if (empty($this->program->LF)) {
+            throw new \Exception('Local frame is empty, cannot pop', Errors::NONEXISTENT_FRAME);
+        }
+
+        $this->program->TF = $this->program->LF;
+        $this->program->TF_activator = 0;  
+    }
+}
+
+
+class CallCommand implements Command {
+    private $program;
+    private $label;
+
+    public function __construct($program, $label) {
+        $this->program = $program;
+        $this->label = $label;
+    }
+
+    public function execute() {
+        $label_index = $this->program->findLabelIndex($this->label);
+        if ($label_index === -1) {
+            throw new \Exception('Label not found', Errors::SEMANTIC_CHECKS);
+        }
+        array_push($this->program->callStack, $this->program->instructionPointer + 1);
+        $this->program->instructionPointer = $label_index - 1;  // -1 because it will increment after execute
+    }
+}
+
+
+class ReturnCommand implements Command {
+    private $program;
+
+    public function __construct($program) {
+        $this->program = $program;
+    }
+
+    public function execute() {
+        if (empty($this->program->callStack)) {
+            throw new \Exception('Call stack is empty', Errors::MISSING_VALUE);
+        }
+        $this->program->instructionPointer = array_pop($this->program->callStack) - 1;  // -1 because it will increment after execute
+    }
+}
+
+class ExitCommand implements Command {
+    private $exitCode;
+
+    public function __construct($exitCode) {
+        $this->exitCode = $exitCode;
+    }
+
+    public function execute() {
+        if (!is_numeric($this->exitCode)) {
+            throw new \Exception('Exit code must be a number', Errors::WRONG_OPERAND_TYPE);
+        }
+        if ($this->exitCode < 0 || $this->exitCode > 9) {
+            throw new \Exception('Exit code must be in range 0-9', Errors::WRONG_OPERANT_VALUE);
+        }
+        exit($this->exitCode);
+    }
+}
+
+class PushCommand implements Command {
+    private $program;
+    private $name;
+    private $frame;
+    private $type;
+    private $value;
+
+    public function __construct($program, $instruction) {
+        $this->program = $program;
+        $this->name = $instruction['arguments'][0]['name'];
+        $this->frame = $instruction['arguments'][0]['frame'];
+        $this->type = $instruction['arguments'][0]['type'];
+        $this->value = $instruction['arguments'][0]['value'];
+    }
+
+    public function execute() {
+       if ($this->type === 'var'){
+            $this->program->_check($this->name, $this->frame);
+            $this->value = $this->program->{$this->frame}[$this->name];
+       }
+     
+        array_push($this->program->dataStack, $this->value);
+        
+    }
+}
+
+class PopCommand implements Command {
+    private $program;
+    private $name;
+    private $frame;
+    private $type;
+    private $value;
+
+    public function __construct($program, $instruction) {
+        $this->program = $program;
+        $this->name = $instruction['arguments'][0]['name'];
+        $this->frame = $instruction['arguments'][0]['frame'];
+        $this->type = $instruction['arguments'][0]['type'];
+        $this->value = $instruction['arguments'][0]['value'];
+    }
+
+    public function execute() {
+        $this->program->_check($this->name, $this->frame);
+        if (empty($this->program->dataStack)) {
+            throw new \Exception('Data stack is empty', Errors::MISSING_VALUE);
+        }
+        $this->program->{$this->frame}[$this->name] = array_pop($this->program->dataStack);
+    }
+}
+
+
+
+
+class CommandFactory {
+    private $inputHandler;
+
+    public function __construct($inputHandler) {
+        $this->inputHandler = $inputHandler;
+    }
+    
+    public function createCommand($instruction, $program) {
+        switch ($instruction['opcode']) {
+            case 'DEFVAR':
+                return new DefVarCommand($program, $instruction['arguments'][0]['name'], $instruction['arguments'][0]['frame']);
+            case 'MOVE':
+                return new ChangeVarCommand($program, $instruction);
+            case 'ADD':
+            case 'MUL':
+            case 'SUB':
+            case 'IDIV':
+            case 'LT':
+            case 'GT':
+            case 'EQ':
+                return new ArithmeticCommand($program, $instruction);
+            case 'CONCAT':
+            case 'STRLEN':
+            case 'GETCHAR':
+            case 'SETCHAR':
+            case 'INT2CHAR':
+            case 'STRI2INT':
+                return new StringOperationCommand($program, $instruction);
+            case 'AND':
+            case 'OR':
+            case 'NOT':
+                return new LogicCommand($program, $instruction);
+            case 'WRITE':
+                return new WriteCommand($program, $instruction);
+            case 'READ':
+                return new ReadCommand($program, $instruction, $this->inputHandler);
+            case 'DPRINT':
+                return new DPrintCommand($program, $instruction);
+            case 'JUMP':
+                return new JumpCommand($program, $instruction['arguments'][0]['value']);
+            case 'JUMPIFEQ':
+            case 'JUMPIFNEQ':
+                
+                return new ConditionalJumpCommand($program, $instruction);
+            case 'LABEL':
+                return null;
+            case 'TYPE':
+                return new TypeCommand($program, $instruction);
+            case 'BREAK':
+                return new BreakCommand($program);
+            case 'CREATEFRAME':
+                return new CreateFrameCommand($program);
+            case 'PUSHFRAME':
+                return new PushFrameCommand($program);
+            case 'POPFRAME':
+                return new PopFrameCommand($program);
+            case 'CALL':
+                return new CallCommand($program, $instruction['arguments'][0]['value']);
+            case 'RETURN':
+                return new ReturnCommand($program);
+            case 'EXIT':
+                return new ExitCommand($instruction['arguments'][0]['value']);
+            case 'PUSHS':
+                return new PushCommand($program, $instruction);
+            case 'POPS':
+                return new PopCommand($program, $instruction);
+                
+            default :
+                throw new \Exception('Unknown opcode', Errors::UNEXPECTED_XML_STRUCTURE);
+                
+            
+        
+        }
+    }
+}
+
+
 class Program{
     public $instructions = [];  
     public $GF = [];
@@ -271,10 +1002,13 @@ class Program{
     public $variables = [];
     public $input;
     public $output;
-    public function __construct($instructions, $input, $output){
+    public $commandFactory;
+    public function __construct($instructions, $input, $output, $commandFactory){
         $this->instructions = $instructions;
         $this->input = $input;
-        $this->output = $output;       
+        $this->output = $output;  
+        $this->commandFactory = $commandFactory;
+           
      
     }
 
@@ -283,420 +1017,20 @@ class Program{
        $this->_getLabels($this->instructions);
        $this->instructionPointer = 0;
        while ($this->instructionPointer < count($this->instructions)) {
-            $this->instructions[$this->instructionPointer];
-            $opcode = $this->instructions[$this->instructionPointer]['opcode'];
-            if ($opcode === 'DEFVAR') {
-                $this->_defvar();
-            }
-
-            else if ($opcode === 'MOVE') {
-                $var_Name = $this->instructions[$this->instructionPointer]['arguments'][0]['name'];
-                $var_Name2 = $this->instructions[$this->instructionPointer]['arguments'][1]['name'];
-                $type = $this->instructions[$this->instructionPointer]['arguments'][0]['type'];
-                $type2 = $this->instructions[$this->instructionPointer]['arguments'][1]['type'];
-                $frame = $this->instructions[$this->instructionPointer]['arguments'][0]['frame'];
-                $frame2 = $this->instructions[$this->instructionPointer]['arguments'][1]['frame'];
-               
-                if ($type === 'var') {
-                    $this->_check($var_Name, $frame);
-                } 
-                if ($type2 === 'var') {
-                    $this->_check($var_Name2, $frame2);
-                } 
-                $this->_change_var();
-                //echo "GF: \n";
-               // var_dump($this->GF);
-            }
-            else if ($opcode === 'ADD' 
-            || $opcode === 'MUL' 
-            || $opcode === 'SUB' 
-            || $opcode === 'IDIV'
-            || $opcode === 'LT'
-            || $opcode === 'GT'
-            || $opcode === 'EQ' 
-            ) {
-                $name1 = $this->instructions[$this->instructionPointer]['arguments'][0]['name'];
-                $name2 = $this->instructions[$this->instructionPointer]['arguments'][1]['name'];
-                $name3 = $this->instructions[$this->instructionPointer]['arguments'][2]['name'];
-                $frame = $this->instructions[$this->instructionPointer]['arguments'][0]['frame'];
-                $frame2 = $this->instructions[$this->instructionPointer]['arguments'][1]['frame'];
-                $frame3 = $this->instructions[$this->instructionPointer]['arguments'][2]['frame'];
-                $type = $this->instructions[$this->instructionPointer]['arguments'][0]['type'];
-                $type2 = $this->instructions[$this->instructionPointer]['arguments'][1]['type'];
-                $type3 = $this->instructions[$this->instructionPointer]['arguments'][2]['type'];
-
-                $this->_check($name1,$frame);
-                if ($type2 === 'var') {
-                    $this->_check($name2, $frame2);
-                } 
-                if ($type3 === 'var') {
-                    $this->_check($name3, $frame3 );
-                }
-
-                $this->_arithmetic();
-            }else if($opcode === 'CONCAT' || $opcode === 'STRLEN' || $opcode === 'GETCHAR' || $opcode === 'SETCHAR' || $opcode === 'INT2CHAR' || $opcode === 'STRI2INT'){
-                $name1 = $this->instructions[$this->instructionPointer]['arguments'][0]['name'];
-                $name2 = $this->instructions[$this->instructionPointer]['arguments'][1]['name'];
-                $frame = $this->instructions[$this->instructionPointer]['arguments'][0]['frame'];
-                $frame2 = $this->instructions[$this->instructionPointer]['arguments'][1]['frame'];
-                $type = $this->instructions[$this->instructionPointer]['arguments'][0]['type'];
-                $type2 = $this->instructions[$this->instructionPointer]['arguments'][1]['type'];
-
-                if (isset ($this->instructions[$this->instructionPointer]['arguments'][2])) {
-                    $name3 = $this->instructions[$this->instructionPointer]['arguments'][2]['name'];
-                    $frame3 = $this->instructions[$this->instructionPointer]['arguments'][2]['frame'];
-                    $type3 = $this->instructions[$this->instructionPointer]['arguments'][2]['type'];
-                    if ($type3 === 'var') {
-                        $this->_check($name3, $frame3 );
-                    }
-    
-                }
-              
-            
-                $this->_check($name1,$frame);
-                if ($type2 === 'var') {
-                    $this->_check($name2, $frame2);
-                } 
-                
-
-                $this->_strings();
-
-
-            }else if($opcode === 'AND' || $opcode === 'OR' || $opcode === 'NOT'){
-                $name1 = $this->instructions[$this->instructionPointer]['arguments'][0]['name'];
-                $name2 = $this->instructions[$this->instructionPointer]['arguments'][1]['name'];
-                
-                $frame = $this->instructions[$this->instructionPointer]['arguments'][0]['frame'];
-                $frame2 = $this->instructions[$this->instructionPointer]['arguments'][1]['frame'];
-                if ($opcode === 'NOT') {
-                    $frame3 = null;
-                    $type3 = null;
-                    $name3 = null;
-                }else{
-                        $frame3 = $this->instructions[$this->instructionPointer]['arguments'][2]['frame'];
-                        $type3 = $this->instructions[$this->instructionPointer]['arguments'][2]['type'];
-                        $name3 = $this->instructions[$this->instructionPointer]['arguments'][2]['name'];
-                    }
-                $type = $this->instructions[$this->instructionPointer]['arguments'][0]['type'];
-                $type2 = $this->instructions[$this->instructionPointer]['arguments'][1]['type'];
-
-                $this->_check($name1,$frame);
-                if ($type2 === 'var') {
-                    $this->_check($name2, $frame2);
-                } 
-                if ($type3 === 'var') {
-                    $this->_check($name3, $frame3 );
-                }
-
-                $this->_logic();
-            }
-            
-           
-            else if ($this->instructions[$this->instructionPointer]['opcode'] === 'WRITE') {
-               
-                $type = $this->instructions[$this->instructionPointer]['arguments'][0]['type'];
-                $var_name = $this->instructions[$this->instructionPointer]['arguments'][0]['name'];
-                $var_value = $this->instructions[$this->instructionPointer]['arguments'][0]['value'];
-                $frame = $this->instructions[$this->instructionPointer]['arguments'][0]['frame'];
-            
-                if(isset($this->{$frame})){
-                    //var_dump($this->{$frame});
-                }
-                $value = $this->{$frame}[$var_name];
-                if($type === 'var'){
-                        $this->_check($var_name,$frame);
-                        
-                        if( $this->{$frame}[$var_name] === null){
-                            throw new \Exception('Missing value', Errors::MISSING_VALUE);
-                        }else{
-                            if($this->{$frame}[$var_name] === 'nil'){
-                            }
-                         
-                            else{
-                                switch (gettype($value)) {
-                                    case "boolean":
-                                        echo $value ? "true" : "false";
-                                        break;
-                                    case "integer":
-                                        echo $this->{$frame}[$var_name];
-                                        break;
-                                    case "string":
-                                        echo $this->{$frame}[$var_name];
-                                       //($this->{$frame});
-                                            break;
-                                    }
-                            
-                            }
-                        }
-                     
-
-                }else if($type === 'bool'){
-                    print $var_value . "\n";
-                }else if($type === 'nil'){ 
-                }
-                else {
-                    
-                    print $var_value . "\n";
-                    
-                }
-
-            }
-            else if($opcode === 'READ'){
-                $var_name = $this->instructions[$this->instructionPointer]['arguments'][0]['name'];
-                $type = $this->instructions[$this->instructionPointer]['arguments'][0]['type'];
-                $frame = $this->instructions[$this->instructionPointer]['arguments'][0]['frame'];
-                $type2 = $this->instructions[$this->instructionPointer]['arguments'][1]['type'];
-                $var_value = $this->instructions[$this->instructionPointer]['arguments'][1]['value'];
-                $frame2 = $this->instructions[$this->instructionPointer]['arguments'][1]['frame'];
-                $var_name2 = $this->instructions[$this->instructionPointer]['arguments'][1]['name'];
-                
-                $this->_check($var_name,$frame);
-                
-                if($type2 === 'type'){
-                    $type2 = $this->instructions[$this->instructionPointer]['arguments'][1]['value'];
-                }
-                if($type2 === 'var'){
-                    
-                    $this->_check($var_name2,$frame2);
-                    $type2 = $this->{$frame2}[$var_name2];
-                    if ($type2 !== 'int' && $type2 !== 'string' && $type2 !== 'bool') {
-                        throw new \Exception('Wrong type of variable', Errors::UNEXPECTED_XML_STRUCTURE);
-                    }
-                }
-                if($type2 === 'int'){
-                    $input = $this->input->readString();
-                    $input = intval($input);
-                    $this->{$frame}[$var_name] = $input;
-                }else if($type2 === 'string'){
-                    $input = $this->input->readString();
-                    $this->{$frame}[$var_name] = $input;
-                }else if($type2 === 'bool'){
-                    $input = $this->input->readString();
-                    if($input === 'true'){
-                        $this->{$frame}[$var_name] = true;
-                    }else{
-                        $this->{$frame}[$var_name] = false;
-                    }
-                }
-            }
-            else if ($this->instructions[$this->instructionPointer]['opcode'] === 'DPRINT') {
-                $var_name = $this->instructions[$this->instructionPointer]['arguments'][0]['name'];
-                $type = $this->instructions[$this->instructionPointer]['arguments'][0]['type'];
-                $frame = $this->instructions[$this->instructionPointer]['arguments'][0]['frame'];
-                $var_value = $this->instructions[$this->instructionPointer]['arguments'][0]['value'];
-                $this->_check($var_name,$frame);
-                if($type === 'var'){
-                    if($this->{$frame}[$var_name] === null){
-                        throw new \Exception('Missing value', Errors::MISSING_VALUE);
-                    }else{
-                        if($this->{$frame}[$var_name]
-                        === 'nil'){
-                            echo "nil\n";
-                        }
-                    }
-                }
-             }
-    
-            else if ($this->instructions[$this->instructionPointer]['opcode'] === 'JUMP') {
-               
-                $label = $this->instructions[$this->instructionPointer]['arguments'][0]['value'];
-                $label_index = $this->findLabelIndex($label);
-                if ($label_index === -1) {
-                    throw new \Exception('Label does not exist', Errors::SEMANTIC_CHECKS);
-                }else{
-                    $this->instructionPointer = $label_index;
-                }
-
-            }
-            else if ($opcode === 'JUMPIFEQ' || $opcode === 'JUMPIFNEQ') {
-                $name1 = $this->instructions[$this->instructionPointer]['arguments'][0]['name'];
-                $name2 = $this->instructions[$this->instructionPointer]['arguments'][1]['name'];
-                $name3 = $this->instructions[$this->instructionPointer]['arguments'][2]['name'];
-                $frame = $this->instructions[$this->instructionPointer]['arguments'][0]['frame'];
-                $frame2 = $this->instructions[$this->instructionPointer]['arguments'][1]['frame'];
-                $frame3 = $this->instructions[$this->instructionPointer]['arguments'][2]['frame'];
-                $type = $this->instructions[$this->instructionPointer]['arguments'][0]['type'];
-                $type2 = $this->instructions[$this->instructionPointer]['arguments'][1]['type'];
-                $type3 = $this->instructions[$this->instructionPointer]['arguments'][2]['type'];
-                
-
-                $this->_check($name1,$frame);
-                if ($type2 === 'var') {
-                    $this->_check($name2, $frame2);
-                } 
-                if ($type3 === 'var') {
-                    $this->_check($name3, $frame3 );
-                }
-
-                $value2 = ($type2 === 'var') ? $this->{$frame2}[$name2] : $this->instructions[$this->instructionPointer]['arguments'][1]['value'];
-                $value3 = ($type3 === 'var') ? $this->{$frame3}[$name3] : $this->instructions[$this->instructionPointer]['arguments'][2]['value'];
-               
-                if ($opcode === 'JUMPIFEQ') {
-                    $value2 = (int)$value2;
-                    $value3 = (int)$value3;
-                    if($value2 === $value3){
-                        $label = $this->instructions[$this->instructionPointer]['arguments'][0]['value'];
-                        $label_index = $this->findLabelIndex($label);
-                        if ($label_index === -1) {
-                            throw new \Exception('Label does not exist', Errors::SEMANTIC_CHECKS);
-                        }else{
-                            $this->instructionPointer = $label_index;
-                        }
-                    }
-                    
-                }else if ($opcode === 'JUMPIFNEQ') {
-                   
-                    if(gettype($value2) === gettype($value3) || $value2 === 'nil' || $value3 === 'nil'){
-                    if($value2 !== $value3){
-                        $label = $this->instructions[$this->instructionPointer]['arguments'][0]['value'];
-                        $label_index = $this->findLabelIndex($label);
-                        if ($label_index === -1) {
-                            throw new \Exception('Label does not exist', Errors::SEMANTIC_CHECKS);
-                        }else{
-                            $this->instructionPointer = $label_index;
-                        }
-                    }}
-                    else{
-                        throw new \Exception('Values are not comparable', Errors::WRONG_OPERAND_TYPE);
-                    }
-                }
-              
-               
-                
-            
-            }
-            else if ($opcode === 'TYPE'){
-                $var_name = $this->instructions[$this->instructionPointer]['arguments'][0]['name'];
-                $var_name2 = $this->instructions[$this->instructionPointer]['arguments'][1]['name'];
-                $frame = $this->instructions[$this->instructionPointer]['arguments'][0]['frame'];
-                $frame2 = $this->instructions[$this->instructionPointer]['arguments'][1]['frame'];
-                $type = $this->instructions[$this->instructionPointer]['arguments'][0]['type'];
-                $type2 = $this->instructions[$this->instructionPointer]['arguments'][1]['type'];
-                $this->_check($var_name,$frame);
-                if ($type2 === 'var') {
-                    $this->_check($var_name2, $frame2);
-                } 
-                $this->_type();
-                
-
-            }
-            else if ($this->instructions[$this->instructionPointer]['opcode'] === 'BREAK') {
-                echo "Instruction pointer: " . $this->instructionPointer . "\n";
-                echo "Global frame: \n";
-                var_dump($this->GF);
-                echo "Local frame: \n";
-                var_dump($this->LF);
-                echo "Temporary frame: \n";
-                var_dump($this->TF);
-                echo "Data stack: \n";
-                var_dump($this->dataStack);
-                echo "Call stack: \n";
-                var_dump($this->callStack);
-
-            }
-            else if ($this->instructions[$this->instructionPointer]['opcode'] === 'CREATEFRAME') {
-            $this->TF_activator = 0;
-           
-            $this->TF = []; // 
-           // var_dump($this->TF);
-           // var_dump($this->LF);
-
-          
-            }
-            else if ($this->instructions[$this->instructionPointer]['opcode'] === 'PUSHFRAME') {
-            
-                if ($this->TF_activator === 0){
-                    $this->TF_activator = 1;
-                   // array_push($this->LF, $this->TF);
-                   if($this->TF !== null){
-                    $this->LF = array_merge($this->LF, $this->TF);
-                   }else{
-                          throw new \Exception('Frame is not defined', Errors::NONEXISTENT_FRAME);
-                   }
-                   // echo "LF: \n";
-                    //var_dump($this->LF);
-
-                    $this->TF = null;
-                    
-                }else{
-                    throw new \Exception('Temporary frame is not defined', Errors::NONEXISTENT_FRAME);
-                }
-            }
-            else if ($this->instructions[$this->instructionPointer]['opcode'] === 'POPFRAME') {
-               
-                    $this->TF_activator = 0;
-                    
-                    if (!empty($this->LF)){
-                        $this->TF = $this->LF;
-                        
-                        //echo "TF: \n";
-                        //var_dump($this->TF);
-                    }
-                    else{
-                        throw new \Exception('LOcal frame is not defined', Errors::NONEXISTENT_FRAME);
-                        }
-            }
-            else if($opcode === 'CALL'){
-                $label = $this->instructions[$this->instructionPointer]['arguments'][0]['value'];
-                $label_index = $this->findLabelIndex($label);
-                if ($label_index === -1) {
-                    throw new \Exception('Label not found', Errors::SEMANTIC_CHECKS);
-                }else{
-                    array_push($this->callStack, $this->instructionPointer + 1);
-                    $this->instructionPointer = $label_index;
-                }
-            }
-            else if($opcode === 'RETURN'){
-                if (empty($this->callStack)) {
-                    throw new \Exception('Call stack is empty', Errors::MISSING_VALUE);
-                }
-                $this->instructionPointer = array_pop($this->callStack);
-
-            }
-            
-            
-            else if ($opcode == 'EXIT') {
-                $exitCode = $this->instructions[$this->instructionPointer]['arguments'][0]['value'];
-                if (!is_numeric($exitCode)) {
-                    throw new \Exception('Exit code must be a number', Errors::WRONG_OPERAND_TYPE);
-                }
-                if ($exitCode < 0 || $exitCode > 9) {
-                    throw new \Exception('Exit code must be in range 0-49', Errors::WRONG_OPERANT_VALUE);
-                }
-                exit($exitCode);
-            }
-            else if($opcode === 'PUSHS'){
-                $type = $this->instructions[$this->instructionPointer]['arguments'][0]['type'];
-                $value = $this->instructions[$this->instructionPointer]['arguments'][0]['value'];
-                $frame = $this->instructions[$this->instructionPointer]['arguments'][0]['frame'];
-                $name = $this->instructions[$this->instructionPointer]['arguments'][0]['name'];
-                if($type === 'var'){
-                    $this->_check($name,$frame);
-                    $value = $this->{$frame}[$name];
-                }
-                array_push($this->dataStack, $value);
-            }
-            else if($opcode === 'POPS'){
-                $var_name = $this->instructions[$this->instructionPointer]['arguments'][0]['name'];
-                $type = $this->instructions[$this->instructionPointer]['arguments'][0]['type'];
-                $frame = $this->instructions[$this->instructionPointer]['arguments'][0]['frame'];
-                $this->_check($var_name,$frame);
-                if (empty($this->dataStack)) {
-                    throw new \Exception('Data stack is empty', Errors::MISSING_VALUE);
-                }else{
-                    $this->{$frame}[$var_name] = array_pop($this->dataStack);
-                }
-               
-
-            }
-            
-            
-            
-            $this->instructionPointer++;
-       }
-
+        $instruction = $this->instructions[$this->instructionPointer];
+        $command = $this->commandFactory->createCommand($instruction, $this);
+        
+        if ($command !== null) {
+            $command->execute();
+        }
+        $this->instructionPointer++;
     }
-    private function _getLabels($instructions) {
+}
+
+
+
+      
+    public function _getLabels($instructions) {
         foreach ($instructions as $instruction) {
             if ($instruction['opcode'] === 'LABEL') {
                 $label = $instruction['arguments'][0]['value']; // get the label name
@@ -708,46 +1042,9 @@ class Program{
         }
         
     }
-    private function _defvar(){
-        $var_name = $this->instructions[$this->instructionPointer]['arguments'][0]['name'];
-        $frame = $this->instructions[$this->instructionPointer]['arguments'][0]['frame'];
-        //$var_value = $this->instructions[$this->instructionPointer]['arguments'][0]['value'];
-        //echo "Var: " . $var_value . "\n";
-       // echo "Frame: " . $frame . "\n";
-        $this->variables[$frame][$var_name] = NULL; 
-       
-        if ($frame === 'GF') {
-            if (array_key_exists($var_name, $this->GF)) {
-                throw new \Exception('Variable already exists in frame', Errors::SEMANTIC_CHECKS);
-            }
-           
-            $this->GF[$var_name] = null;
-           // echo "frame: " . $frame . "\n";
-           // var_dump($this->GF);
-        } elseif ($frame === 'LF') {
-            if (array_key_exists($var_name, $this->LF)) {
-                throw new \Exception('Variable already exists in frame', Errors::SEMANTIC_CHECKS);
-            }
-            $this->LF[$var_name] = null;
-            //echo "frame: " . $frame . "\n";
-           // var_dump($this->{$frame});
-            
-        } elseif ($frame === 'TF') {
-            if (array_key_exists($var_name, $this->TF)) {
-                throw new \Exception('Variable already exists in frame', Errors::SEMANTIC_CHECKS);
-            }
-            
-            if ($this->TF_activator === 1)
-            {
-                throw new \Exception('Frame is not defined', Errors::NONEXISTENT_FRAME);
-            }
-            $this->TF[$var_name] = null;
-           // echo "frame: " . $frame . "\n";
-           //($this->{$frame});
-            
-        }
-    }
-    private function _check($varName, $frame){
+    
+  
+    public function _check($varName, $frame){
         
     
         if ($frame === 'GF') {
@@ -774,46 +1071,11 @@ class Program{
     }
    
     
-    private function _change_var(){
-        if (isset($this->instructions[$this->instructionPointer]['arguments'][0]) && 
-        isset($this->instructions[$this->instructionPointer]['arguments'][1])) {
-
-        $arg1Value = $this->instructions[$this->instructionPointer]['arguments'][0]['name'];
-        $frame = $this->instructions[$this->instructionPointer]['arguments'][0]['frame'];
-        $arg2Value = $this->instructions[$this->instructionPointer]['arguments'][1]['value'];
-        $type2 = $this->instructions[$this->instructionPointer]['arguments'][1]['type'];
-        $arg2Name = $this->instructions[$this->instructionPointer]['arguments'][1]['name'];
-        //echo "argument 2 value";
-        //var_dump($arg2Value);
-
-        if ($type2 === 'var') {
-            $frame2 = $this->instructions[$this->instructionPointer]['arguments'][1]['frame'];
-            $arg2Value = $this->{$frame2}[$arg2Name];  // Получаем значение переменной arg2 из ее фрейма
-        } else {
-            $arg2Value = $this->instructions[$this->instructionPointer]['arguments'][1]['value'];  // Используем значение напрямую, если это не переменная
-        }
-        if ($frame === 'GF') { 
-            $this->GF[$arg1Value] = $arg2Value;
-        } elseif ($frame === 'LF') {
-           
-            $this->LF[$arg1Value] = $arg2Value;
-        } elseif ($frame === 'TF') {
-          
-            $this->TF[$arg1Value] = $arg2Value;
-        }
-        
-        //echo "frame: " . $frame . "\n";
-       // var_dump($this->{$frame});
-        
-           
-    } else {
-        throw new \Exception('Missing value', Errors::MISSING_VALUE);
-    }
-
-    }
+    
 
 
-    private function _arithmetic(){
+
+    public function _arithmetic(){
         $arg_name1 = $this->instructions[$this->instructionPointer]['arguments'][0]['name'];
         $arg_name2 = $this->instructions[$this->instructionPointer]['arguments'][1]['name'];
         $arg_name3 = $this->instructions[$this->instructionPointer]['arguments'][2]['name'];
@@ -868,11 +1130,6 @@ class Program{
         
         }
 
-            
-
-
-  
-
     // Сравнение значений
     switch ($opcodeArg) {
         case 'LT':
@@ -914,13 +1171,11 @@ class Program{
             throw new \Exception("Variable $arg_name1 does not exist in frame $frame");
         }
         $this->{$frame}[$arg_name1] = $result;
-       // echo "Result: " .  $this->{$frame}[$arg_name1] . "\n";
-        
-      // var_dump($this->GF);
+       
         
     }
 
-    private function findLabelIndex($labelName) {
+    public function findLabelIndex($labelName) {
         foreach ($this->instructions as $index => $instruction) {
             if ($instruction['opcode'] === 'LABEL' && $instruction['arguments'][0]['value'] === $labelName) {
                 //echo "Label: " . $labelName . "\n";
@@ -932,7 +1187,7 @@ class Program{
         return -1; // Если метка не найдена
     }
 
-    private function _strings(){
+    public function _strings(){
         $arg_name1 = $this->instructions[$this->instructionPointer]['arguments'][0]['name'];
         $arg_name2 = $this->instructions[$this->instructionPointer]['arguments'][1]['name'];
         $value1 = $this->instructions[$this->instructionPointer]['arguments'][0]['value'];
@@ -948,17 +1203,12 @@ class Program{
             $value3 = ($type3 === 'var') ? $this->{$frame3}[$arg_name3] : $this->instructions[$this->instructionPointer]['arguments'][2]['value'];
         }
 
-        
-     
         $opcodeArg = $this->instructions[$this->instructionPointer]['opcode'];
         
         
 
         $type2 = $this->instructions[$this->instructionPointer]['arguments'][1]['type'];
         $value2 = $this->instructions[$this->instructionPointer]['arguments'][1]['value'];
-        
-
-        
         $value2 = ($type2 === 'var') ? $this->{$frame2}[$arg_name2] : $this->instructions[$this->instructionPointer]['arguments'][1]['value'];
        //var_dump($value2);
        //var_dump($value3);
@@ -1025,7 +1275,7 @@ class Program{
         
     }
 
-    private function _logic(){
+    public function _logic(){
         $arg_name1 = $this->instructions[$this->instructionPointer]['arguments'][0]['name'];
         $arg_name2 = $this->instructions[$this->instructionPointer]['arguments'][1]['name'];   
         $frame = $this->instructions[$this->instructionPointer]['arguments'][0]['frame'];
@@ -1095,7 +1345,7 @@ class Program{
     }
 }
 
-    private function checkVariableString($value) {
+    public function checkVariableString($value) {
         if ($value === 'nil') {
            return false;
             
@@ -1111,7 +1361,7 @@ class Program{
         }
     }
     }
-    private function _type(){
+    public function _type(){
         $arg_name1 = $this->instructions[$this->instructionPointer]['arguments'][0]['name'];
         $arg_name2 = $this->instructions[$this->instructionPointer]['arguments'][1]['name'];
         $frame = $this->instructions[$this->instructionPointer]['arguments'][0]['frame'];
