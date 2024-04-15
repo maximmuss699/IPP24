@@ -20,10 +20,9 @@ class Interpreter extends AbstractInterpreter
             $interpret = new Program($parsedInstructions, $this->input, $this->stdout, $commandFactory);
             $interpret->run();
            
-            return 0; // 
+            return 0;  
         } catch (\Exception $e) {
             $this->stderr->writeString("Error: " . $e->getMessage() . "\n");
-            //echo $e->getCode();
             exit($e->getCode());
         }
        
@@ -189,7 +188,7 @@ class XmlParser {
         return $parsedInstructions;
     }
 
-    public static function stringEscape(string $string): string {
+    public static function stringEscape(string $string): mixed {
         $pattern = '/\\\\(\d{3})/';
         $callback = function ($matches) {
             return chr($matches[1]);
@@ -347,7 +346,7 @@ class ArithmeticCommand implements Command {
     }
 
     public function execute() {
-        $opcode = $this->instruction['opcode'];
+
         $args = $this->instruction['arguments'];
 
         $name1 = $args[0]['name'];
@@ -552,12 +551,6 @@ class WriteCommand implements Command {
         if ($this->type === 'var') {
             $this->program->_check($this->varName, $this->frame);
             $actualValue = $this->program->{$this->frame}[$this->varName];
-            
-
-            if ($actualValue === null) {
-                throw new \Exception('Missing value', Errors::MISSING_VALUE);
-            }
-
             $this->printValue($actualValue);
         } else {
             $this->printValue($this->value);
@@ -566,17 +559,20 @@ class WriteCommand implements Command {
 
     private function printValue(mixed $value): void {
         switch (gettype($value)) {
-            case "boolean":
-               
+            case "boolean":    
                 $this->outputHandler->writeString($value ? "true" : "false");
                 break;
             case "integer":
             case "string":
-                $this->outputHandler->writeString($value);
+                if ($value === 'nil' || $value === 'nil@nil') {
+                    $this->outputHandler->writeString("");
+                } else {
+                    $this->outputHandler->writeString($value);
+                }
                 break;
             case "NULL":
-                $this->outputHandler->writeString("nil");
-                break;
+                $this->outputHandler->writeString("");
+                break;    
             default:
                 throw new \Exception("Unsupported type for WRITE operation", Errors::WRONG_OPERAND_TYPE);
         }
@@ -604,21 +600,43 @@ class ReadCommand implements Command {
     public function execute() {
         $this->program->_check($this->varName, $this->frame);
         $input = $this->inputHandler->readString();
-
+      
         switch ($this->type) {
-            case 'int':
-                $value = intval($input);
+            case 'int':        
+                if ($input === null || $input === '') {
+                    $value = 'nil@nil';     
+                }else{
+                    if (is_numeric($input)) {
+                       
+                        $value = intval($input);
+                    } else {
+                       
+                        return 'nil@nil'; 
+                    }
+            }
                 break;
             case 'string':
+                if ($input === null || $input === '') {
+                    $value = 'nil@nil';     
+                }else{
                 $value = $input;
+                }
                 break;
             case 'bool':
-                $value = strtolower($input) === 'true';
+                if ($input === null || $input === '') {
+                    $value = 'nil@nil';     
+                }else{
+                    if ($input === 'true' || $input === 'false') {
+                        $value = strtolower($input);
+                    } else {
+                        return 'nil@nil'; 
+                    }
+                }
                 break;
             default:
-                throw new \Exception('Unsupported input type', Errors::WRONG_OPERAND_TYPE);
+                throw new \Exception('Unsupported input type', Errors::UNEXPECTED_XML_STRUCTURE);
         }
-
+    
         $this->program->{$this->frame}[$this->varName] = $value;
     }
 }
@@ -726,10 +744,13 @@ class ConditionalJumpCommand implements Command {
 
         // Perform conditional jump
         if ($this->opcode === 'JUMPIFEQ') {
-            $value2 = (int)$value2;
-            $value3 = (int)$value3;
-            if($value2 === $value3){
-            $this->jumpToLabel();
+            if(gettype($value2) === gettype($value3) || $value2 === 'nil' || $value3 === 'nil'){
+                if($value2 === $value3){
+                    $this->jumpToLabel();
+                }
+            }
+            else{
+                throw new \Exception('Values are not comparable', Errors::WRONG_OPERAND_TYPE);
             }
         } elseif ($this->opcode === 'JUMPIFNEQ') {
             if(gettype($value2) === gettype($value3) || $value2 === 'nil' || $value3 === 'nil'){
@@ -1077,7 +1098,19 @@ class CommandFactory {
 
 
 class Program{
-    public mixed $instructions = [];  
+     /**
+     * @var array<int, array{
+     *     order: string,
+     *     opcode: string,
+     *     arguments: array<int, array{
+     *         type: string,
+     *         value: string,
+     *         frame: string|null,
+     *         name: string|null
+     *     }>
+     * }>
+     */
+    public array $instructions = [];  
     public mixed $GF = [];
     public mixed $LF = [];
     public int $TF_activator = 1;
@@ -1165,105 +1198,87 @@ class Program{
 
 
     public function _arithmetic(): void {
-        $arg_name1 = $this->instructions[$this->instructionPointer]['arguments'][0]['name'];
-        $arg_name2 = $this->instructions[$this->instructionPointer]['arguments'][1]['name'];
-        $arg_name3 = $this->instructions[$this->instructionPointer]['arguments'][2]['name'];
-        $frame = $this->instructions[$this->instructionPointer]['arguments'][0]['frame'];
-        $frame2 = $this->instructions[$this->instructionPointer]['arguments'][1]['frame'];
-        $frame3 = $this->instructions[$this->instructionPointer]['arguments'][2]['frame'];
-        $opcodeArg = $this->instructions[$this->instructionPointer]['opcode'];
-        
-        
-
-        $type2 = $this->instructions[$this->instructionPointer]['arguments'][1]['type'];
-        $type3 = $this->instructions[$this->instructionPointer]['arguments'][2]['type'];
-        $value2 = $this->instructions[$this->instructionPointer]['arguments'][1]['value'];
-        $value3 = $this->instructions[$this->instructionPointer]['arguments'][2]['value'];
-
-        
-        $value2 = ($type2 === 'var') ? $this->{$frame2}[$arg_name2] : $this->instructions[$this->instructionPointer]['arguments'][1]['value'];
-        $value3 = ($type3 === 'var') ? $this->{$frame3}[$arg_name3] : $this->instructions[$this->instructionPointer]['arguments'][2]['value'];
-        $result = 0;
-
-        
-        if ( $opcodeArg === 'ADD' || $opcodeArg === 'MUL' || $opcodeArg === 'SUB' || $opcodeArg === 'IDIV'){
-        if (is_numeric($value2) && is_numeric($value3) && $value2 == (int)$value2  && $value3 == (int)$value3) {
-            $value2 = (int)$value2;
-            $value3 = (int)$value3;
-        } else {
-            throw new \Exception("Values for ADD operation are not integers", Errors::WRONG_OPERAND_TYPE);
-        }
-        }
-        if ( $opcodeArg === 'LT' || $opcodeArg === 'GT' || $opcodeArg === 'EQ'){
-            // Используем функцию areValuesComparable для проверки типов значений
-            if ( $opcodeArg === 'LT' || $opcodeArg === 'GT'){
-            if (gettype($value2) !== gettype($value3) || $value2 === 'nil' || $value3 === 'nil') {
-
-                throw new \Exception("Values are not comparable", Errors::WRONG_OPERAND_TYPE);
-                
-            }
-        }
-        if ( $opcodeArg === 'EQ'){
-            if ($value2 === 'nil' || $value3 === 'nil') {
-                if ($value2 === 'nil' && $value3 === 'nil') {
-                    $result = true;
-                } else {
-                    $result = false;
-                }
-            } else{
-                if (gettype($value2) !== gettype($value3)) {
-
-                    throw new \Exception("Values are not comparable", Errors::WRONG_OPERAND_TYPE);
-                    
-                }
-            }
-        
-        }
-
-    // Сравнение значений
-    switch ($opcodeArg) {
-        case 'LT':
-            $result = $value2 < $value3;
-            break;
-        case 'GT':
-            $result = $value2 > $value3;
-            break;
-        case 'EQ':
-            $result = $value2 === $value3;
-            break;
-    }
-
-    // Запись результата в переменную
-    if (!array_key_exists($arg_name1, $this->{$frame})) {
-        throw new \Exception("Variable $arg_name1 does not exist in frame $frame");
-    }
-    $this->{$frame}[$arg_name1] = $result;
-    }
-
-        if ( $opcodeArg === 'ADD'){
-        $result = $value2 + $value3;
-        }else if ( $opcodeArg  === 'MUL'){
-            $result = $value2 * $value3;
-        }else if ( $opcodeArg  === 'SUB'){
-            $result = $value2 - $value3;
-        }else if ( $opcodeArg  === 'IDIV'){
-            if ($value3 === 0) {
-                throw new \Exception("Division by zero", Errors::WRONG_OPERANT_VALUE);
-            }else{
-                $result = intdiv($value2, $value3);
-            }
+        $instruction = $this->instructions[$this->instructionPointer];
+        $args = $instruction['arguments'];
+        $opcode = $instruction['opcode'];
+    
+        // Fetch operand details
+        list($value1, $frame1) = $this->getValueAndFrame($args[0]);
+        list($value2, $frame2) = $this->getValueAndFrame($args[1]);
+        list($value3, $frame3) = $this->getValueAndFrame($args[2]);
+    
+        // Type casting to integers if necessary
+        if (in_array($opcode, ['ADD', 'MUL', 'SUB', 'IDIV'])) {
+            $value2 = $this->ensureInteger($value2);
+            $value3 = $this->ensureInteger($value3);
         }
     
-
-
-
-        if (!array_key_exists($arg_name1, $this->{$frame})) {
-            throw new \Exception("Variable $arg_name1 does not exist in frame $frame");
+        // Operation handling
+        switch ($opcode) {
+            case 'ADD':
+                $result = $value2 + $value3;
+                break;
+            case 'SUB':
+                $result = $value2 - $value3;
+                break;
+            case 'MUL':
+                $result = $value2 * $value3;
+                break;
+            case 'IDIV':
+                if ($value3 === 0) {
+                    throw new \Exception("Division by zero", Errors::WRONG_OPERANT_VALUE);
+                }
+                $result = intdiv($value2, $value3);
+                break;
+            case 'LT':
+            case 'GT':
+            case 'EQ':
+                $result = $this->compareValues($value2, $value3, $opcode);
+                break;
+            default:
+                throw new \Exception("Unsupported opcode $opcode", Errors::UNEXPECTED_XML_STRUCTURE);
         }
-        $this->{$frame}[$arg_name1] = $result;
-       
-        
+    
+        // Store result in the target variable
+        $this->storeResult($frame1, $args[0]['name'], $result);
     }
+    
+    private function getValueAndFrame(mixed $arg): mixed {
+        $value = $arg['type'] === 'var' ? $this->{$arg['frame']}[$arg['name']] : $arg['value'];
+        return [$value, $arg['frame']];
+    }
+    
+    private function ensureInteger(mixed $value): int {
+        if (!is_numeric($value) || $value != (int)$value) {
+            throw new \Exception("Values must be integers", Errors::WRONG_OPERAND_TYPE);
+        }
+        return (int)$value;
+    }
+    
+    private function compareValues(mixed $value2, mixed $value3, mixed $opcode): bool {
+        if (($value2 === 'nil' || $value3 === 'nil') && $opcode === 'EQ') {
+            return $value2 === $value3;
+        } elseif ($value2 === 'nil' || $value3 === 'nil') {
+            throw new \Exception("Comparison with nil not allowed", Errors::WRONG_OPERAND_TYPE);
+        } elseif (gettype($value2) !== gettype($value3)) {
+            throw new \Exception("Values are not comparable", Errors::WRONG_OPERAND_TYPE);
+        }
+    
+        switch ($opcode) {
+            case 'LT': return $value2 < $value3;
+            case 'GT': return $value2 > $value3;
+            case 'EQ': return $value2 === $value3;
+            default: throw new \Exception("Invalid comparison operation", Errors::UNEXPECTED_XML_STRUCTURE);
+        }
+    }
+    
+    private function storeResult(string $frame, string $name, mixed $result): void {
+        if (!array_key_exists($name, $this->{$frame})) {
+            throw new \Exception("Variable $name does not exist in frame $frame");
+        }
+        $this->{$frame}[$name] = $result;
+    }
+    
 
     public function findLabelIndex(string $labelName): int {
         foreach ($this->instructions as $index => $instruction) {
@@ -1294,9 +1309,6 @@ class Program{
         }
 
         $opcodeArg = $this->instructions[$this->instructionPointer]['opcode'];
-        
-        
-
         $type2 = $this->instructions[$this->instructionPointer]['arguments'][1]['type'];
         $value2 = $this->instructions[$this->instructionPointer]['arguments'][1]['value'];
         $value2 = ($type2 === 'var') ? $this->{$frame2}[$arg_name2] : $this->instructions[$this->instructionPointer]['arguments'][1]['value'];
@@ -1327,8 +1339,10 @@ class Program{
             if ($this->checkVariableString($value1) && is_int($value2) && $this->checkVariableString($value3))
              {
                 if(isset($value1[$value2])){
-                $value1[$value2] = $value3;
-                $result = $value1;
+                $tmp = $this->{$frame}[$arg_name1];
+                $tmp[$value2] = $value3;
+                $result = $tmp;
+                
                 }else{
                     throw new \Exception("Index is out of bounds", Errors::WRONG_STRING);
                 }
@@ -1347,20 +1361,22 @@ class Program{
                 throw new \Exception("Values for INT2CHAR operation are not integers", Errors::WRONG_OPERAND_TYPE);
             }
         }
-         else if ($opcodeArg === 'STRI2INT') {
+        else if ($opcodeArg === 'STRI2INT') {
             if ($this->checkVariableString($value2) && is_int($value3)) {
-                $result = ord($value2[$value3]);
+                if (isset($value2[$value3])) {  // Check if the index exists in the string
+                    $result = ord($value2[$value3]);
+                } else {
+                    throw new \Exception("Index out of bounds", Errors::WRONG_STRING);
+                }
             } else {
-                throw new \Exception("Values for STRI2INT operation are not strings", Errors::WRONG_OPERAND_TYPE);
+                throw new \Exception("Values for STRI2INT operation are not strings or index is not an integer", Errors::WRONG_OPERAND_TYPE);
             }
         }
         if (!array_key_exists($arg_name1, $this->{$frame})) {
             throw new \Exception("Variable $arg_name1 does not exist in frame $frame");
         }
         $this->{$frame}[$arg_name1] = $result;
-       // echo "Result: " .  $this->{$frame}[$arg_name1] . "\n";
-        
-      // var_dump($this->GF);
+
         
     }
 
