@@ -1,5 +1,6 @@
 <?php
-
+// IPP 2.project 2023/2024
+// Author: Maksim Samusevich(xsamus00)
 namespace IPP\Student;
 
 use IPP\Core\AbstractInterpreter;
@@ -31,6 +32,8 @@ class Interpreter extends AbstractInterpreter
 
     
 }
+
+
 class XmlParser {
     /**
      * Parses the given DOMDocument to extract program instructions.
@@ -228,13 +231,6 @@ private static function convertBasedOnType(string $type, $value) {
             return $value; 
     }
 }
-
-
-
-
-
-
-
 }
 
 class Opcodes{
@@ -289,12 +285,6 @@ class Errors {
 
 
 
-
-
-
-
-
-
 interface Command {
     /**
      * @return mixed
@@ -302,6 +292,8 @@ interface Command {
     public function execute();
 }
 
+// Class for DEFVAR command
+// This command defines a new variable in the given frame
 class DefVarCommand implements Command {
     /**
      * @var Program
@@ -328,10 +320,12 @@ class DefVarCommand implements Command {
         }
 
         $frameRef[$this->varName] = null;  // Define variable with initial value null
-        //var_dump($frameRef);
     }
 }
 
+// Class for Arithmetic commands
+// This command performs arithmetic operations on variables
+// Uses the _arithmetic method in the Program class
 class ArithmeticCommand implements Command {
      /**
      * @var Program
@@ -375,6 +369,9 @@ class ArithmeticCommand implements Command {
     }
 }
 
+// Class for String operation commands
+// This command performs string operations on variables
+// Uses the _strings method in the Program class
 class StringOperationCommand implements Command {
      /**
      * @var Program
@@ -418,6 +415,9 @@ class StringOperationCommand implements Command {
     }
 }
 
+// Class for Logic commands
+// This command performs logical operations on variables
+// Uses the _logic method in the Program class
 class LogicCommand implements Command {
      /**
      * @var Program
@@ -472,9 +472,8 @@ class LogicCommand implements Command {
 
 
 
-
-
-
+// Class for Move command
+// This command moves the value of one variable to another
 class ChangeVarCommand implements Command {
      /**
      * @var Program
@@ -514,7 +513,6 @@ class ChangeVarCommand implements Command {
         switch ($this->frame) {
             case 'GF':
                 $this->program->GF[$this->arg1Value] = $this->arg2Value;
-                //var_dump($this->program->GF);
                 break;
             case 'LF':
                 $this->program->LF[$this->arg1Value] = $this->arg2Value;
@@ -527,6 +525,8 @@ class ChangeVarCommand implements Command {
     }
 }
 
+// Class for WRITE command
+// This command writes the value of a variable to the output
 class WriteCommand implements Command {
      /**
      * @var Program
@@ -579,6 +579,8 @@ class WriteCommand implements Command {
     }
 }
 
+// Class for READ command
+// This command reads a value from the input and stores it in a variable
 class ReadCommand implements Command {
      /**
      * @var Program
@@ -641,6 +643,7 @@ class ReadCommand implements Command {
     }
 }
 
+
 class DPrintCommand implements Command {
      /**
      * @var Program
@@ -677,6 +680,10 @@ class DPrintCommand implements Command {
     }
 }
 
+// Class for Jump command
+// This command jumps to a label in the program
+// Uses the findLabelIndex method in the Program class to find the label 
+// and sets the instruction pointer to the index of the label
 class JumpCommand implements Command {
      /**
      * @var Program
@@ -699,6 +706,9 @@ class JumpCommand implements Command {
     }
 }
 
+// Class for conditional jumps commands
+// This command performs a conditional jump to a label in the program
+// Uses the findLabelIndex method in the Program class to find the label
 class ConditionalJumpCommand implements Command {
      /**
      * @var Program
@@ -776,7 +786,9 @@ class ConditionalJumpCommand implements Command {
     }
 }
 
-
+// Class for Type command
+// This command determines the type of a variable and stores it in another variable
+// Uses the _type method in the Program class
 class TypeCommand implements Command {
      /**
      * @var Program
@@ -806,6 +818,9 @@ class TypeCommand implements Command {
     }
 }
 
+// Class for BREAK command
+// This command prints the current state of the program
+
 class BreakCommand implements Command {
      /**
      * @var Program
@@ -833,6 +848,10 @@ class BreakCommand implements Command {
     }
 }
 
+// Class for CREATEFRAME command
+// This command creates a new temporary frame
+// Sets the temporary frame to an empty array
+// Sets the temporary frame activator to 0
 class CreateFrameCommand implements Command {
      /**
      * @var Program
@@ -850,8 +869,9 @@ class CreateFrameCommand implements Command {
 }
 
 
-
-
+// Class for PUSHFRAME command
+// This command pushes the temporary frame to the local frame
+// Sets the temporary frame activator to 1
 class PushFrameCommand implements Command {
      /**
      * @var Program
@@ -877,6 +897,9 @@ class PushFrameCommand implements Command {
     }
 }
 
+// Class for POPFRAME command
+// This command pops the local frame to the temporary frame
+// Sets the temporary frame activator to 0
 class PopFrameCommand implements Command {
      /**
      * @var Program
@@ -897,7 +920,9 @@ class PopFrameCommand implements Command {
     }
 }
 
-
+// Class for CALL command
+// This command calls a label in the program
+// Pushes the current instruction pointer to the call stack
 class CallCommand implements Command {
      /**
      * @var Program
@@ -920,7 +945,9 @@ class CallCommand implements Command {
     }
 }
 
-
+// Class for RETURN command
+// This command returns to the instruction pointer stored in the call stack
+// Pops the instruction pointer from the call stack
 class ReturnCommand implements Command {
      /**
      * @var Program
@@ -939,6 +966,9 @@ class ReturnCommand implements Command {
     }
 }
 
+// Class for EXIT command
+// This command exits the program with a given exit code
+// exit code should be in range 0-9
 class ExitCommand implements Command {
     private mixed $exitCode;
 
@@ -957,6 +987,8 @@ class ExitCommand implements Command {
     }
 }
 
+// Class for PUSHS command
+// This command pushes a value to the data stack
 class PushCommand implements Command {
      /**
      * @var Program
@@ -986,6 +1018,8 @@ class PushCommand implements Command {
     }
 }
 
+// Class for POPS command
+// This command pops a value from the data stack and stores it in a variable
 class PopCommand implements Command {
      /**
      * @var Program
@@ -1015,7 +1049,8 @@ class PopCommand implements Command {
 
 
 
-
+// Class for Command
+// This class creates a command based on the instruction
 class CommandFactory {
     private mixed $inputHandler;
     private mixed $outputHandler;
@@ -1096,7 +1131,10 @@ class CommandFactory {
     }
 }
 
-
+// Class for Program
+// This class represents the program
+// It contains the instructions, frames, stacks, labels, variables, input, output and command factory
+// It also contains methods to run the program and execute instructions
 class Program{
      /**
      * @var array<int, array{
@@ -1150,7 +1188,8 @@ class Program{
 
 
 
-      
+    // Method to get labels
+    // This method gets the labels from the instructions and stores them in an array
     public function _getLabels(mixed $instructions): void 
     {
         foreach ($instructions as $instruction) {
@@ -1165,7 +1204,8 @@ class Program{
         
     }
     
-  
+    // Method to check variable existence
+    // This method checks if a variable exists in a frame
     public function _check(string $varName, string $frame): void{
         
     
@@ -1195,8 +1235,8 @@ class Program{
     
     
 
-
-
+    // Method to perform arithmetic operations
+    // This method performs arithmetic operations on variables
     public function _arithmetic(): void {
         $instruction = $this->instructions[$this->instructionPointer];
         $args = $instruction['arguments'];
@@ -1279,7 +1319,7 @@ class Program{
         $this->{$frame}[$name] = $result;
     }
     
-
+    // Method to find the index of a label
     public function findLabelIndex(string $labelName): int {
         foreach ($this->instructions as $index => $instruction) {
             if ($instruction['opcode'] === 'LABEL' && $instruction['arguments'][0]['value'] === $labelName) {
@@ -1290,7 +1330,7 @@ class Program{
         }
         return -1; 
     }
-
+    // Method to perform string operations
     public function _strings(): void{
         $arg_name1 = $this->instructions[$this->instructionPointer]['arguments'][0]['name'];
         $arg_name2 = $this->instructions[$this->instructionPointer]['arguments'][1]['name'];
@@ -1380,13 +1420,14 @@ class Program{
         
     }
 
+
+    // Method for logic operations
     public function _logic(): void{
         $arg_name1 = $this->instructions[$this->instructionPointer]['arguments'][0]['name'];
         $arg_name2 = $this->instructions[$this->instructionPointer]['arguments'][1]['name'];   
         $frame = $this->instructions[$this->instructionPointer]['arguments'][0]['frame'];
         $frame2 = $this->instructions[$this->instructionPointer]['arguments'][1]['frame'];  
         $opcodeArg = $this->instructions[$this->instructionPointer]['opcode'];
-        
         
         $type2 = $this->instructions[$this->instructionPointer]['arguments'][1]['type'];
         $value2 = ($type2 === 'var') ? $this->{$frame2}[$arg_name2] : $this->instructions[$this->instructionPointer]['arguments'][1]['value'];
@@ -1400,8 +1441,6 @@ class Program{
             if (is_bool($value2)) {
             
                 $result = !$value2;
-                //var_dump($result);
-               // var_dump($value2);
                 if (!array_key_exists($arg_name1, $this->{$frame})) {
                     throw new \Exception("Variable $arg_name1 does not exist in frame $frame");
                 }
@@ -1442,11 +1481,6 @@ class Program{
 
 
         }
-
-
-        
-
-
     }
 }
 
@@ -1467,6 +1501,9 @@ class Program{
         }
         return false;
     }
+
+    // Method for TYPE command
+    // This method determines the type of a variable and stores it in another variable
     public function _type(): void{
         $arg_name1 = $this->instructions[$this->instructionPointer]['arguments'][0]['name'];
         $arg_name2 = $this->instructions[$this->instructionPointer]['arguments'][1]['name'];
